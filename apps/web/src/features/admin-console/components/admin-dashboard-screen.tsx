@@ -162,7 +162,7 @@ export function AdminDashboardScreen({ locale }: AdminDashboardScreenProps) {
             title={adminConsoleCopy.dashboard.charts.activityTitle}
             body={adminConsoleCopy.dashboard.charts.activityBody}
           />
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <div className="mt-6 grid gap-6">
             <div>
               <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
                 {adminConsoleCopy.dashboard.cards.totalIssues}

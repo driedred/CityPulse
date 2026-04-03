@@ -82,25 +82,30 @@ export function TrendChart({
   const maxValue = Math.max(...points.map((point) => point.value), 1);
 
   return (
-    <div className="flex items-end gap-2">
-      {points.map((point) => (
-        <div key={point.label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-          <div className="flex h-40 w-full items-end rounded-[1.25rem] bg-white/6 p-1">
-            <div
-              className={cn(
-                "w-full rounded-[0.9rem] bg-gradient-to-t",
-                colorClassName,
-              )}
-              style={{
-                height: `${Math.max((point.value / maxValue) * 100, 8)}%`,
-              }}
-            />
+    <div className="overflow-x-auto pb-2">
+      <div className="flex min-w-[28rem] items-end gap-2">
+        {points.map((point) => (
+          <div
+            key={point.label}
+            className="flex min-w-[2.4rem] flex-1 flex-col items-center gap-2"
+          >
+            <div className="flex h-40 w-full items-end rounded-[1.25rem] bg-white/6 p-1">
+              <div
+                className={cn(
+                  "w-full rounded-[0.9rem] bg-gradient-to-t",
+                  colorClassName,
+                )}
+                style={{
+                  height: `${Math.max((point.value / maxValue) * 100, 8)}%`,
+                }}
+              />
+            </div>
+            <span className="block w-full truncate text-center text-[11px] uppercase tracking-[0.18em] text-slate-500">
+              {point.label}
+            </span>
           </div>
-          <span className="truncate text-[11px] uppercase tracking-[0.18em] text-slate-500">
-            {point.label}
-          </span>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
