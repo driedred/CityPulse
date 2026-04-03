@@ -10,8 +10,11 @@ from app.schemas.issue import (
     IssueDuplicateSuggestionResponse,
     IssueFeedbackCreate,
     IssueFeedbackRead,
+    IssuePublicImpactRead,
     IssueRewriteRequest,
     IssueRewriteResponse,
+    IssueSupportExistingRead,
+    IssueSupportExistingRequest,
     PublicIssueDetailRead,
     PublicIssueMapMarkerRead,
     PublicIssueSummaryRead,
@@ -100,6 +103,15 @@ async def get_public_issue(
     return await service.get_public_issue(issue_id)
 
 
+@router.get("/issues/{issue_id}/impact", response_model=IssuePublicImpactRead)
+async def get_public_issue_impact(
+    issue_id: UUID,
+    session: SessionDep,
+) -> IssuePublicImpactRead:
+    service = PublicIssueService(session)
+    return await service.impact_scores.get_public_score(issue_id, published_only=True)
+
+
 @router.post(
     "/issues/duplicates",
     response_model=IssueDuplicateSuggestionResponse,
@@ -134,4 +146,19 @@ async def record_issue_feedback(
         issue_id=issue_id,
         user_id=current_user.id,
         action=payload.action,
+    )
+
+
+@router.post("/issues/{issue_id}/support", response_model=IssueSupportExistingRead)
+async def support_existing_issue(
+    issue_id: UUID,
+    payload: IssueSupportExistingRequest,
+    current_user: CurrentUser,
+    session: SessionDep,
+) -> IssueSupportExistingRead:
+    service = PublicIssueService(session)
+    return await service.support_existing_issue(
+        issue_id=issue_id,
+        user_id=current_user.id,
+        payload=payload,
     )

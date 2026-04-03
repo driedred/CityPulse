@@ -29,6 +29,13 @@ class SwipeDirection(StrEnum):
     LESS_LIKE_THIS = "less_like_this"
 
 
+class DuplicateResolutionStatus(StrEnum):
+    POSSIBLE = "possible"
+    CONFIRMED = "confirmed"
+    SUPPORTED_EXISTING = "supported_existing"
+    DISMISSED = "dismissed"
+
+
 class ModerationResultStatus(StrEnum):
     QUEUED = "queued"
     APPROVED = "approved"

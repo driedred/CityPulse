@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { appCopy } from "@/content/copy";
 import type { PublicIssueDetail } from "@/lib/api/types";
 import {
+  formatAffectedPeopleEstimate,
   formatCompactNumber,
   formatCoordinates,
+  formatImpactScore,
   formatIssueDate,
   getIssueLocationSnippet,
   getIssueSignalLabel,
@@ -79,7 +81,13 @@ export function IssueDetailsContent({
         <div className="flex items-start gap-3">
           <Sparkles className="mt-1 h-4 w-4 text-primary" />
           <div>
-            <p className="text-sm font-semibold">{signalLabel}</p>
+            <p className="text-sm font-semibold">{appCopy.issueDetail.scoreTitle}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {formatImpactScore(issue.public_impact_score)} · {signalLabel}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {formatAffectedPeopleEstimate(issue.affected_people_estimate)}
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {formatCompactNumber(issue.support_count)} {appCopy.issueViews.supportCountLabel}
             </p>

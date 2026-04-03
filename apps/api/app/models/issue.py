@@ -12,6 +12,8 @@ from app.models.enums import IssueStatus, ModerationState
 if TYPE_CHECKING:
     from app.models.issue_attachment import IssueAttachment
     from app.models.issue_category import IssueCategory
+    from app.models.issue_duplicate_link import IssueDuplicateLink
+    from app.models.issue_impact_snapshot import IssueImpactSnapshot
     from app.models.moderation_result import ModerationResult
     from app.models.support_ticket import SupportTicket
     from app.models.swipe_feedback import SwipeFeedback
@@ -64,10 +66,24 @@ class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="issue",
         cascade="all, delete-orphan",
     )
+    impact_snapshot: Mapped[IssueImpactSnapshot | None] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
     attachments: Mapped[list[IssueAttachment]] = relationship(
         back_populates="issue",
         cascade="all, delete-orphan",
     )
     support_tickets: Mapped[list[SupportTicket]] = relationship(
         back_populates="issue"
+    )
+    canonical_duplicate_links: Mapped[list[IssueDuplicateLink]] = relationship(
+        back_populates="canonical_issue",
+        foreign_keys="IssueDuplicateLink.canonical_issue_id",
+        cascade="all, delete-orphan",
+    )
+    duplicate_links: Mapped[list[IssueDuplicateLink]] = relationship(
+        back_populates="duplicate_issue",
+        foreign_keys="IssueDuplicateLink.duplicate_issue_id",
     )

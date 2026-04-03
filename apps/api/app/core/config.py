@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me-in-production-please-rotate"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-5.4-mini"
     s3_endpoint_url: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None

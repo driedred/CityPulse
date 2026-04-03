@@ -11,6 +11,11 @@ Backend service for CityPulse built with FastAPI, SQLAlchemy, Alembic, and JWT a
 5. Run `python -m app.scripts.seed`.
 6. Start the API with `uvicorn app.main:app --reload`.
 
+## AI placeholder config
+
+- `OPENAI_MODEL` defaults to `gpt-5.4-mini` for future rewrite and moderation integrations.
+- Set `OPENAI_API_KEY` when the placeholder rewrite flow is replaced with a live OpenAI API call.
+
 ## Implemented endpoints
 
 - `POST /api/auth/register`

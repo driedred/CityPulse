@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { appCopy } from "@/content/copy";
 import type { PublicIssueSummary } from "@/lib/api/types";
 import {
+  formatAffectedPeopleEstimate,
   formatCompactNumber,
+  formatImpactScore,
   formatIssueDate,
   getIssueLocationSnippet,
   getIssueSignalLabel,
@@ -77,7 +79,20 @@ export function IssueCard({ issue, onOpen, actions, compact = false }: IssueCard
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
               <span>
+                {appCopy.issueViews.impactLabel}: {formatImpactScore(issue.public_impact_score)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span>
                 {formatCompactNumber(issue.support_count)} {appCopy.issueViews.supportCountLabel}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span>
+                {appCopy.issueViews.affectedLabel}:{" "}
+                {formatAffectedPeopleEstimate(issue.affected_people_estimate)}
               </span>
             </div>
             <div className="flex items-center gap-2">

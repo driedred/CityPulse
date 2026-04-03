@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Index, String
+from sqlalchemy import Boolean, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -21,5 +21,11 @@ class IssueCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    severity_baseline: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    affected_people_baseline: Mapped[int] = mapped_column(
+        Integer,
+        default=20,
+        nullable=False,
+    )
 
     issues: Mapped[list[Issue]] = relationship(back_populates="category")

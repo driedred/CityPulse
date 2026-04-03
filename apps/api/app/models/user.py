@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.admin_action_log import AdminActionLog
     from app.models.issue import Issue
     from app.models.issue_attachment import IssueAttachment
+    from app.models.issue_duplicate_link import IssueDuplicateLink
     from app.models.support_ticket import SupportTicket
     from app.models.swipe_feedback import SwipeFeedback
     from app.models.ticket_message import TicketMessage
@@ -51,4 +52,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     admin_action_logs: Mapped[list[AdminActionLog]] = relationship(
         back_populates="admin"
+    )
+    created_duplicate_links: Mapped[list[IssueDuplicateLink]] = relationship(
+        back_populates="created_by_user"
     )

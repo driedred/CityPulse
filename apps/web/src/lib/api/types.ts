@@ -21,6 +21,14 @@ export type SwipeAction =
   | "less_like_this";
 
 export type PublicIssueSort = "top" | "recent" | "nearby";
+export type DuplicateLookupStatus =
+  | "no_match"
+  | "possible_duplicates"
+  | "high_confidence_duplicate";
+export type DuplicateRecommendedAction =
+  | "support_existing"
+  | "review_before_submit"
+  | "submit_new_issue";
 
 export type ApiErrorPayload = {
   error: {
@@ -54,6 +62,8 @@ export type IssueCategory = {
   display_name: string;
   description: string | null;
   is_active: boolean;
+  severity_baseline: number;
+  affected_people_baseline: number;
 };
 
 export type IssueAttachment = {
@@ -77,6 +87,8 @@ export type PublicIssueSummary = {
   category: IssueCategory;
   location_snippet: string;
   support_count: number;
+  public_impact_score: number | null;
+  affected_people_estimate: number | null;
   importance_label: string | null;
   cover_image_url: string | null;
   created_at: string;
@@ -93,6 +105,8 @@ export type PublicIssueDetail = {
   category: IssueCategory;
   location_snippet: string;
   support_count: number;
+  public_impact_score: number | null;
+  affected_people_estimate: number | null;
   importance_label: string | null;
   cover_image_url: string | null;
   source_locale: string;
@@ -115,6 +129,8 @@ export type Issue = {
   attachments: IssueAttachment[];
   support_count: number;
   location_snippet: string;
+  public_impact_score: number | null;
+  affected_people_estimate: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -127,17 +143,50 @@ export type PublicIssueMapMarker = {
   category: IssueCategory;
   location_snippet: string;
   support_count: number;
+  public_impact_score: number | null;
+  affected_people_estimate: number | null;
   importance_label: string | null;
+};
+
+export type IssuePublicImpact = {
+  issue_id: string;
+  public_impact_score: number;
+  affected_people_estimate: number;
+  importance_label: string;
+  score_version: string;
+  updated_at: string;
+};
+
+export type IssueImpactFactor = {
+  name: string;
+  label: string;
+  weight: number;
+  signal: number;
+  contribution: number;
+  raw_value: string | number | null;
+  details: Record<string, unknown>;
+};
+
+export type IssueImpactAdmin = IssuePublicImpact & {
+  signals: Record<string, unknown>;
+  factors: IssueImpactFactor[];
+  calculation_notes: string[];
 };
 
 export type DuplicateSuggestion = {
   issue: PublicIssueSummary;
+  existing_issue_id: string;
   similarity_score: number;
+  reason_breakdown: string[];
   distance_km: number;
-  reason: string;
+  text_similarity: number;
+  category_match: boolean;
+  recommended_action: DuplicateRecommendedAction;
+  image_similarity: number | null;
 };
 
 export type DuplicateSuggestionResponse = {
+  status: DuplicateLookupStatus;
   matches: DuplicateSuggestion[];
 };
 
@@ -151,6 +200,32 @@ export type IssueFeedbackResponse = {
   issue_id: string;
   action: SwipeAction;
   support_count: number;
+  support_changed: boolean;
+  public_impact_score: number | null;
+  affected_people_estimate: number | null;
+};
+
+export type SupportExistingIssueInput = {
+  candidate_title?: string | null;
+  candidate_description?: string | null;
+  candidate_category_id?: string | null;
+  candidate_latitude?: number | null;
+  candidate_longitude?: number | null;
+  similarity_score?: number | null;
+  distance_km?: number | null;
+  text_similarity?: number | null;
+  category_match?: boolean;
+  reason_breakdown?: string[];
+  image_hashes?: string[];
+};
+
+export type SupportExistingIssueResponse = {
+  canonical_issue_id: string;
+  duplicate_link_id: string | null;
+  support_count: number;
+  support_changed: boolean;
+  public_impact_score: number;
+  affected_people_estimate: number;
 };
 
 export type SupportTicketMessage = {

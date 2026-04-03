@@ -110,6 +110,9 @@ export const appCopy = {
     openDetails: "Open details",
     openPage: "Open full page",
     supportCountLabel: "supporters",
+    impactLabel: "Importance",
+    affectedLabel: "Affected people",
+    estimatedPrefix: "Approx.",
     noImage: "No image",
     detailBack: "Back to public issues",
     detailMeta: "Public issue detail",
@@ -126,6 +129,7 @@ export const appCopy = {
     locationTitle: "Location",
     metadataTitle: "Issue metadata",
     supportAction: "Support this issue",
+    scoreTitle: "Public impact",
     close: "Close details",
     viewPage: "Open full page",
     attachmentsTitle: "Attachments",
@@ -196,9 +200,14 @@ export const appCopy = {
     duplicateHeading: "Possible duplicate issues",
     duplicateBody:
       "These look related. You can support an existing issue or continue with your own report if it adds distinct information.",
+    duplicateHighConfidence:
+      "A very similar issue already exists nearby. Supporting that report is likely the fastest path to action.",
+    duplicatePossible:
+      "Related issues were found. Review them before deciding whether your report adds distinct evidence.",
     noDuplicates: "No close duplicates were found in the current public and moderation-ready pool.",
     checkDuplicates: "Check duplicates",
     supportExisting: "Support existing issue",
+    supportExistingFaster: "Supporting an existing issue is faster",
     submitAnyway: "Submit anyway",
     submit: "Submit issue",
     next: "Continue",
@@ -210,7 +219,9 @@ export const appCopy = {
     goToMyIssues: "Open my issues",
     validationTitle: "Please finish the required fields",
     duplicateSupportSaved:
-      "Support for the existing issue has been recorded. You can still submit if your report adds distinct evidence.",
+      "Support for the existing issue has been recorded and its priority has been refreshed. You can still submit if your report adds distinct evidence.",
+    duplicateSupportResult:
+      "Existing issue supported. This path helps concentrate signals instead of splitting attention across duplicates.",
     rewriteSaved: "Rewrite applied to the draft.",
     locationError: "Location access is unavailable on this device or was denied.",
     metadataPending:
@@ -245,5 +256,7 @@ export const appCopy = {
     overview: "Overview",
     open: "Open",
     none: "None",
+    reviewRecommended: "Review recommended",
+    supportRecommended: "Support recommended",
   },
 } as const;

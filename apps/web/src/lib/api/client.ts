@@ -7,11 +7,15 @@ import type {
   IssueAttachment,
   IssueCategory,
   IssueFeedbackResponse,
+  IssueImpactAdmin,
+  IssuePublicImpact,
   PublicIssueDetail,
   PublicIssueMapMarker,
   PublicIssueSort,
   PublicIssueSummary,
   RewriteResponse,
+  SupportExistingIssueInput,
+  SupportExistingIssueResponse,
   SupportTicket,
   SwipeAction,
   User,
@@ -174,6 +178,16 @@ export const apiClient = {
     return request<PublicIssueDetail>(`/api/public/issues/${issueId}`);
   },
 
+  async getPublicIssueImpact(issueId: string) {
+    return request<IssuePublicImpact>(`/api/public/issues/${issueId}/impact`);
+  },
+
+  async getIssueAdminImpact(token: string, issueId: string) {
+    return request<IssueImpactAdmin>(`/api/issues/${issueId}/impact/admin`, {
+      token,
+    });
+  },
+
   async submitIssue(
     token: string,
     input: {
@@ -265,6 +279,18 @@ export const apiClient = {
       method: "POST",
       token,
       body: JSON.stringify({ action }),
+    });
+  },
+
+  async supportExistingIssue(
+    token: string,
+    issueId: string,
+    input: SupportExistingIssueInput,
+  ) {
+    return request<SupportExistingIssueResponse>(`/api/public/issues/${issueId}/support`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
     });
   },
 };

@@ -25,12 +25,15 @@ import { IssueCard } from "@/features/issues/components/issue-card";
 import { IssueDetailsSheet } from "@/features/issues/components/issue-details-sheet";
 import { useIssueCategories } from "@/features/issues/hooks/use-public-issues";
 import {
+  formatAffectedPeopleEstimate,
   formatCoordinates,
+  formatImpactScore,
   getIssueLocationSnippet,
 } from "@/features/issues/lib/presenters";
 import { useUserLocation } from "@/hooks/use-user-location";
 import { apiClient } from "@/lib/api/client";
 import type {
+  DuplicateLookupStatus,
   DuplicateSuggestion,
   RewriteResponse,
 } from "@/lib/api/types";
@@ -83,6 +86,8 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
   const [photoDrafts, setPhotoDrafts] = useState<PhotoDraft[]>([]);
   const [rewriteSuggestion, setRewriteSuggestion] = useState<RewriteResponse | null>(null);
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateSuggestion[]>([]);
+  const [duplicateStatus, setDuplicateStatus] =
+    useState<DuplicateLookupStatus>("no_match");
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
   const [isRewriting, setIsRewriting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -179,6 +184,7 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
     });
     setRewriteSuggestion(null);
     setDuplicateMatches([]);
+    setDuplicateStatus("no_match");
     setSupportedDuplicateId(null);
     setStep(0);
   }
@@ -268,6 +274,7 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
         latitude: latitude as number,
         longitude: longitude as number,
       });
+      setDuplicateStatus(response.status);
       setDuplicateMatches(response.matches);
       return true;
     } catch (error) {
@@ -301,11 +308,30 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
     }
   }
 
-  async function supportExistingIssue(issueId: string) {
+  async function supportExistingIssue(match: DuplicateSuggestion) {
     try {
-      await apiClient.sendIssueFeedback(authToken, issueId, "support");
-      setSupportedDuplicateId(issueId);
-      setNotice(appCopy.create.duplicateSupportSaved);
+      const response = await apiClient.supportExistingIssue(authToken, match.existing_issue_id, {
+        candidate_title: form.getValues("title"),
+        candidate_description: form.getValues("short_description"),
+        candidate_category_id: form.getValues("category_id") || null,
+        candidate_latitude: latitude,
+        candidate_longitude: longitude,
+        similarity_score: match.similarity_score,
+        distance_km: match.distance_km,
+        text_similarity: match.text_similarity,
+        category_match: match.category_match,
+        reason_breakdown: match.reason_breakdown,
+        image_hashes: [],
+      });
+      setSupportedDuplicateId(match.existing_issue_id);
+      setNotice([
+        appCopy.create.duplicateSupportResult,
+        formatImpactScore(response.public_impact_score),
+        formatAffectedPeopleEstimate(response.affected_people_estimate),
+      ].join(" | "));
+      /* setNotice(
+        `${appCopy.create.duplicateSupportResult} ${response.public_impact_score.toFixed(1)}/10 · ${response.affected_people_estimate}`,
+      ); */
     } catch (error) {
       setNotice(error instanceof Error ? error.message : appCopy.issueViews.errorTitle);
     }
@@ -639,7 +665,11 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
                     : appCopy.create.checkDuplicates}
                 </Button>
                 <Button type="button" onClick={submitIssue} disabled={isSubmitting}>
-                  {isSubmitting ? appCopy.common.loading : appCopy.create.submit}
+                  {isSubmitting
+                    ? appCopy.common.loading
+                    : duplicateStatus === "no_match"
+                      ? appCopy.create.submit
+                      : appCopy.create.submitAnyway}
                 </Button>
               </div>
             </div>
@@ -647,14 +677,18 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
             <div className="rounded-[2rem] border border-amber-400/25 bg-amber-400/10 p-6 shadow-soft backdrop-blur sm:p-8">
               <p className="text-sm font-semibold">{appCopy.create.duplicateHeading}</p>
               <p className="mt-3 text-sm leading-7 text-amber-950/80 dark:text-amber-100/90">
-                {appCopy.create.duplicateBody}
+                {duplicateStatus === "high_confidence_duplicate"
+                  ? appCopy.create.duplicateHighConfidence
+                  : duplicateStatus === "possible_duplicates"
+                    ? appCopy.create.duplicatePossible
+                    : appCopy.create.duplicateBody}
               </p>
             </div>
 
             {duplicateMatches.length ? (
               <div className="grid gap-4">
                 {duplicateMatches.map((match) => (
-                  <div key={match.issue.id} className="space-y-3">
+                  <div key={match.existing_issue_id} className="space-y-3">
                     <IssueCard
                       issue={match.issue}
                       compact
@@ -662,16 +696,39 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
                       actions={
                         <Button
                           type="button"
-                          variant={supportedDuplicateId === match.issue.id ? "secondary" : "outline"}
-                          onClick={() => supportExistingIssue(match.issue.id)}
+                          variant={
+                            supportedDuplicateId === match.existing_issue_id
+                              ? "secondary"
+                              : match.recommended_action === "support_existing"
+                                ? "default"
+                                : "outline"
+                          }
+                          onClick={() => supportExistingIssue(match)}
                         >
-                          {appCopy.create.supportExisting}
+                          {match.recommended_action === "support_existing"
+                            ? appCopy.create.supportExistingFaster
+                            : appCopy.create.supportExisting}
                         </Button>
                       }
                     />
-                    <p className="text-sm text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                      <Badge
+                        variant={
+                          match.recommended_action === "support_existing"
+                            ? "primary"
+                            : "subtle"
+                        }
+                      >
+                        {match.recommended_action === "support_existing"
+                          ? appCopy.common.supportRecommended
+                          : appCopy.common.reviewRecommended}
+                      </Badge>
+                      <span>{match.reason_breakdown.join(" | ")}</span>
+                      <span>{match.similarity_score.toFixed(2)}</span>
+                      {/*
                       {match.reason} · {match.similarity_score.toFixed(2)}
-                    </p>
+                      */}
+                    </div>
                   </div>
                 ))}
               </div>

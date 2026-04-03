@@ -43,7 +43,8 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 |       |-- Dockerfile
 |       `-- package.json
 |-- docs
-|   `-- architecture.md
+|   |-- architecture.md
+|   `-- impact-score.md
 |-- packages
 |   `-- README.md
 |-- docker-compose.yml
@@ -89,4 +90,6 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 
 - Locale-aware routing starts with `/[locale]` and defaults to `en`.
 - The backend now includes JWT auth, role-aware models, Alembic migrations, seed data, and API tests.
+- The backend AI integration surface now defaults `OPENAI_MODEL` to `gpt-5.4-mini`.
 - The architecture overview lives in [docs/architecture.md](docs/architecture.md).
+- Impact scoring and duplicate detection are documented in [docs/impact-score.md](docs/impact-score.md).

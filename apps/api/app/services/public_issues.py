@@ -1,33 +1,32 @@
 from __future__ import annotations
 
-import math
-import re
-from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError
-from app.models import Issue, IssueCategory, SwipeFeedback
-from app.models.enums import IssueStatus, SwipeDirection
+from app.models import Issue, IssueCategory, IssueDuplicateLink, SwipeFeedback
+from app.models.enums import DuplicateResolutionStatus, IssueStatus, SwipeDirection
 from app.schemas.issue import (
     IssueCategoryRead,
-    IssueDuplicateSuggestionRead,
     IssueDuplicateSuggestionRequest,
     IssueDuplicateSuggestionResponse,
     IssueFeedbackRead,
     IssueRewriteRequest,
     IssueRewriteResponse,
+    IssueSupportExistingRead,
+    IssueSupportExistingRequest,
     PublicIssueDetailRead,
     PublicIssueMapMarkerRead,
     PublicIssueSummaryRead,
 )
-
-TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+from app.services.duplicate_detection import DuplicateDetectionService
+from app.services.impact_scores import ImpactScoreService
+from app.services.intelligence_utils import distance_km, normalize_text
 
 
 @dataclass(slots=True)
@@ -44,6 +43,8 @@ class PublicIssueService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.settings = get_settings()
+        self.impact_scores = ImpactScoreService(session)
+        self.duplicate_detection = DuplicateDetectionService(session)
 
     async def list_categories(self) -> list[IssueCategoryRead]:
         categories = await self.session.scalars(
@@ -51,21 +52,18 @@ class PublicIssueService:
             .where(IssueCategory.is_active.is_(True))
             .order_by(IssueCategory.display_name.asc())
         )
-        return [
-            IssueCategoryRead.model_validate(category)
-            for category in categories.all()
-        ]
+        return [IssueCategoryRead.model_validate(category) for category in categories.all()]
 
     async def list_public_issues(
         self,
         query: PublicIssueQuery,
     ) -> list[PublicIssueSummaryRead]:
         issues = await self._load_public_issues(query)
-        support_counts = await self._get_support_counts(issue.id for issue in issues)
-        sorted_issues = self._sort_issues(issues, support_counts, query)
+        snapshots = await self.impact_scores.ensure_issue_metrics(issues, commit=True)
+        sorted_issues = self._sort_issues(issues, snapshots, query)
 
         return [
-            self._to_public_summary(issue, support_counts.get(issue.id, 0), query)
+            self._to_public_summary(issue, snapshots.get(issue.id), query)
             for issue in sorted_issues[: query.limit]
         ]
 
@@ -74,27 +72,13 @@ class PublicIssueService:
         query: PublicIssueQuery,
     ) -> list[PublicIssueMapMarkerRead]:
         issues = await self._load_public_issues(query)
-        support_counts = await self._get_support_counts(issue.id for issue in issues)
-        sorted_issues = self._sort_issues(issues, support_counts, query)
-        markers: list[PublicIssueMapMarkerRead] = []
+        snapshots = await self.impact_scores.ensure_issue_metrics(issues, commit=True)
+        sorted_issues = self._sort_issues(issues, snapshots, query)
 
-        for issue in sorted_issues[: query.limit]:
-            markers.append(
-                PublicIssueMapMarkerRead(
-                    id=issue.id,
-                    title=issue.title,
-                    latitude=issue.latitude,
-                    longitude=issue.longitude,
-                    category=IssueCategoryRead.model_validate(issue.category),
-                    location_snippet=self._location_snippet(issue),
-                    support_count=support_counts.get(issue.id, 0),
-                    importance_label=self._importance_label(
-                        support_counts.get(issue.id, 0)
-                    ),
-                )
-            )
-
-        return markers
+        return [
+            self._to_public_map_marker(issue, snapshots.get(issue.id))
+            for issue in sorted_issues[: query.limit]
+        ]
 
     async def get_public_issue(self, issue_id: UUID) -> PublicIssueDetailRead:
         issue = await self.session.scalar(
@@ -103,91 +87,27 @@ class PublicIssueService:
             .options(
                 selectinload(Issue.category),
                 selectinload(Issue.attachments),
+                selectinload(Issue.impact_snapshot),
             )
         )
         if issue is None:
             raise NotFoundError("Public issue was not found.")
 
-        support_counts = await self._get_support_counts([issue.id])
-        return self._to_public_detail(issue, support_counts.get(issue.id, 0))
+        snapshots = await self.impact_scores.ensure_issue_metrics([issue], commit=True)
+        return self._to_public_detail(issue, snapshots.get(issue.id))
 
     async def suggest_duplicates(
         self,
         payload: IssueDuplicateSuggestionRequest,
     ) -> IssueDuplicateSuggestionResponse:
-        candidate_issues_result = await self.session.scalars(
-            select(Issue)
-            .where(Issue.status.in_(
-                [
-                    IssueStatus.PENDING_MODERATION,
-                    IssueStatus.APPROVED,
-                    IssueStatus.PUBLISHED,
-                ]
-            ))
-            .options(
-                selectinload(Issue.category),
-                selectinload(Issue.attachments),
-            )
-            .order_by(Issue.created_at.desc())
-            .limit(50)
-        )
-        candidate_issues = list(candidate_issues_result.all())
-
-        candidate_tokens = self._tokenize(f"{payload.title} {payload.short_description}")
-        support_counts = await self._get_support_counts(
-            issue.id for issue in candidate_issues
-        )
-        matches: list[IssueDuplicateSuggestionRead] = []
-
-        for issue in candidate_issues:
-            issue_tokens = self._tokenize(f"{issue.title} {issue.short_description}")
-            overlap_score = self._token_overlap_score(candidate_tokens, issue_tokens)
-            distance_km = self._distance_km(
-                payload.latitude,
-                payload.longitude,
-                issue.latitude,
-                issue.longitude,
-            )
-            category_bonus = (
-                0.2
-                if payload.category_id is not None and issue.category_id == payload.category_id
-                else 0.0
-            )
-            proximity_score = max(0.0, 1 - min(distance_km / 8, 1))
-            similarity_score = round(
-                min(overlap_score * 0.65 + proximity_score * 0.25 + category_bonus, 1.0),
-                3,
-            )
-
-            if similarity_score < 0.34:
-                continue
-
-            reason_parts = []
-            if overlap_score >= 0.45:
-                reason_parts.append("Similar wording")
-            if distance_km <= 1.2:
-                reason_parts.append("nearby location")
-            if category_bonus > 0:
-                reason_parts.append("same category")
-
-            matches.append(
-                IssueDuplicateSuggestionRead(
-                    issue=self._to_public_summary(issue, support_counts.get(issue.id, 0)),
-                    similarity_score=similarity_score,
-                    distance_km=round(distance_km, 2),
-                    reason=", ".join(reason_parts) or "Potential duplicate",
-                )
-            )
-
-        matches.sort(key=lambda match: match.similarity_score, reverse=True)
-        return IssueDuplicateSuggestionResponse(matches=matches[:3])
+        return await self.duplicate_detection.find_duplicate_candidates(payload)
 
     async def rewrite_issue_text(
         self,
         payload: IssueRewriteRequest,
     ) -> IssueRewriteResponse:
-        normalized_title = self._normalize_text(payload.title, max_length=160)
-        normalized_description = self._normalize_text(
+        normalized_title = normalize_text(payload.title, max_length=160)
+        normalized_description = normalize_text(
             payload.short_description,
             max_length=4000,
         )
@@ -210,7 +130,8 @@ class PublicIssueService:
             rewritten_description=rewritten_description,
             note=(
                 "This assistive rewrite keeps the issue content intact while reducing heat "
-                "and clarifying the request."
+                "and clarifying the request. Live OpenAI integration is configured to use "
+                f"{self.settings.openai_model}."
             ),
         )
 
@@ -221,39 +142,74 @@ class PublicIssueService:
         user_id: UUID,
         action: SwipeDirection,
     ) -> IssueFeedbackRead:
-        issue = await self.session.scalar(
-            select(Issue).where(
-                Issue.id == issue_id,
-                Issue.status == IssueStatus.PUBLISHED,
-            )
+        issue = await self._load_public_issue_for_feedback(issue_id)
+        feedback, support_changed = await self._upsert_feedback(
+            issue_id=issue.id,
+            user_id=user_id,
+            action=action,
         )
-        if issue is None:
-            raise NotFoundError("Public issue was not found.")
-
-        feedback = await self.session.scalar(
-            select(SwipeFeedback).where(
-                SwipeFeedback.user_id == user_id,
-                SwipeFeedback.issue_id == issue_id,
-            )
-        )
-
-        if feedback is None:
-            feedback = SwipeFeedback(
-                user_id=user_id,
-                issue_id=issue_id,
-                direction=action,
-            )
-            self.session.add(feedback)
-        else:
-            feedback.direction = action
-
+        await self.session.flush()
+        snapshot = await self.impact_scores.recalculate_issue(issue.id, commit=False)
         await self.session.commit()
 
-        support_counts = await self._get_support_counts([issue_id])
         return IssueFeedbackRead(
-            issue_id=issue_id,
-            action=action,
-            support_count=support_counts.get(issue_id, 0),
+            issue_id=issue.id,
+            action=feedback.direction,
+            support_count=int(snapshot.signals.get("unique_supporters", 0)),
+            support_changed=support_changed,
+            public_impact_score=snapshot.public_impact_score,
+            affected_people_estimate=snapshot.affected_people_estimate,
+        )
+
+    async def support_existing_issue(
+        self,
+        *,
+        issue_id: UUID,
+        user_id: UUID,
+        payload: IssueSupportExistingRequest,
+    ) -> IssueSupportExistingRead:
+        issue = await self._load_public_issue_for_feedback(issue_id)
+        _, support_changed = await self._upsert_feedback(
+            issue_id=issue.id,
+            user_id=user_id,
+            action=SwipeDirection.SUPPORT,
+        )
+
+        duplicate_link = None
+        if self._should_capture_duplicate_signal(payload):
+            duplicate_link = IssueDuplicateLink(
+                canonical_issue_id=issue.id,
+                created_by_user_id=user_id,
+                status=DuplicateResolutionStatus.SUPPORTED_EXISTING,
+                similarity_score=payload.similarity_score,
+                distance_km=payload.distance_km,
+                text_similarity=payload.text_similarity,
+                category_match=payload.category_match,
+                reason_breakdown={"reasons": payload.reason_breakdown},
+                candidate_snapshot={
+                    "title": payload.candidate_title,
+                    "short_description": payload.candidate_description,
+                    "category_id": str(payload.candidate_category_id)
+                    if payload.candidate_category_id
+                    else None,
+                    "latitude": payload.candidate_latitude,
+                    "longitude": payload.candidate_longitude,
+                    "image_hashes": payload.image_hashes,
+                },
+            )
+            self.session.add(duplicate_link)
+
+        await self.session.flush()
+        snapshot = await self.impact_scores.recalculate_issue(issue.id, commit=False)
+        await self.session.commit()
+
+        return IssueSupportExistingRead(
+            canonical_issue_id=issue.id,
+            duplicate_link_id=duplicate_link.id if duplicate_link else None,
+            support_count=int(snapshot.signals.get("unique_supporters", 0)),
+            support_changed=support_changed,
+            public_impact_score=snapshot.public_impact_score,
+            affected_people_estimate=snapshot.affected_people_estimate,
         )
 
     async def _load_public_issues(self, query: PublicIssueQuery) -> list[Issue]:
@@ -263,6 +219,7 @@ class PublicIssueService:
             .options(
                 selectinload(Issue.category),
                 selectinload(Issue.attachments),
+                selectinload(Issue.impact_snapshot),
             )
         )
 
@@ -275,35 +232,51 @@ class PublicIssueService:
         issues = await self.session.scalars(statement)
         return list(issues.all())
 
-    async def _get_support_counts(
-        self,
-        issue_ids: Iterable[UUID],
-    ) -> dict[UUID, int]:
-        ids = tuple(issue_ids)
-        if not ids:
-            return {}
-
-        rows = await self.session.execute(
-            select(SwipeFeedback.issue_id, func.count(SwipeFeedback.id))
-            .where(
-                SwipeFeedback.issue_id.in_(ids),
-                SwipeFeedback.direction == SwipeDirection.SUPPORT,
+    async def _load_public_issue_for_feedback(self, issue_id: UUID) -> Issue:
+        issue = await self.session.scalar(
+            select(Issue).where(
+                Issue.id == issue_id,
+                Issue.status == IssueStatus.PUBLISHED,
             )
-            .group_by(SwipeFeedback.issue_id)
         )
-        return {issue_id: count for issue_id, count in rows.all()}
+        if issue is None:
+            raise NotFoundError("Public issue was not found.")
+        return issue
 
-    def _sort_issues(
+    async def _upsert_feedback(
         self,
-        issues: list[Issue],
-        support_counts: dict[UUID, int],
-        query: PublicIssueQuery,
-    ) -> list[Issue]:
+        *,
+        issue_id: UUID,
+        user_id: UUID,
+        action: SwipeDirection,
+    ) -> tuple[SwipeFeedback, bool]:
+        feedback = await self.session.scalar(
+            select(SwipeFeedback).where(
+                SwipeFeedback.user_id == user_id,
+                SwipeFeedback.issue_id == issue_id,
+            )
+        )
+        was_support = feedback is not None and feedback.direction == SwipeDirection.SUPPORT
+
+        if feedback is None:
+            feedback = SwipeFeedback(
+                user_id=user_id,
+                issue_id=issue_id,
+                direction=action,
+            )
+            self.session.add(feedback)
+        else:
+            feedback.direction = action
+
+        support_changed = action == SwipeDirection.SUPPORT and not was_support
+        return feedback, support_changed
+
+    def _sort_issues(self, issues, snapshots, query: PublicIssueQuery):
         if query.sort == "top":
             return sorted(
                 issues,
                 key=lambda issue: (
-                    support_counts.get(issue.id, 0),
+                    snapshots.get(issue.id).public_impact_score if snapshots.get(issue.id) else 0,
                     issue.created_at,
                 ),
                 reverse=True,
@@ -312,7 +285,7 @@ class PublicIssueService:
         if query.sort == "nearby" and query.latitude is not None and query.longitude is not None:
             return sorted(
                 issues,
-                key=lambda issue: self._distance_km(
+                key=lambda issue: distance_km(
                     query.latitude,
                     query.longitude,
                     issue.latitude,
@@ -325,13 +298,13 @@ class PublicIssueService:
     def _to_public_summary(
         self,
         issue: Issue,
-        support_count: int,
+        snapshot,
         query: PublicIssueQuery | None = None,
     ) -> PublicIssueSummaryRead:
-        distance_km = None
+        distance_value = None
         if query is not None and query.latitude is not None and query.longitude is not None:
-            distance_km = round(
-                self._distance_km(
+            distance_value = round(
+                distance_km(
                     query.latitude,
                     query.longitude,
                     issue.latitude,
@@ -348,19 +321,23 @@ class PublicIssueService:
             longitude=issue.longitude,
             category=IssueCategoryRead.model_validate(issue.category),
             location_snippet=self._location_snippet(issue),
-            support_count=support_count,
-            importance_label=self._importance_label(support_count),
+            support_count=int(snapshot.signals.get("unique_supporters", 0)) if snapshot else 0,
+            public_impact_score=snapshot.public_impact_score if snapshot else None,
+            affected_people_estimate=(
+                snapshot.affected_people_estimate if snapshot else None
+            ),
+            importance_label=(
+                self.impact_scores.importance_label(snapshot.public_impact_score)
+                if snapshot
+                else None
+            ),
             cover_image_url=self._cover_image_url(issue),
             created_at=issue.created_at,
             updated_at=issue.updated_at,
-            distance_km=distance_km,
+            distance_km=distance_value,
         )
 
-    def _to_public_detail(
-        self,
-        issue: Issue,
-        support_count: int,
-    ) -> PublicIssueDetailRead:
+    def _to_public_detail(self, issue: Issue, snapshot) -> PublicIssueDetailRead:
         return PublicIssueDetailRead(
             id=issue.id,
             title=issue.title,
@@ -369,15 +346,41 @@ class PublicIssueService:
             longitude=issue.longitude,
             category=IssueCategoryRead.model_validate(issue.category),
             location_snippet=self._location_snippet(issue),
-            support_count=support_count,
-            importance_label=self._importance_label(support_count),
+            support_count=int(snapshot.signals.get("unique_supporters", 0)) if snapshot else 0,
+            public_impact_score=snapshot.public_impact_score if snapshot else None,
+            affected_people_estimate=(
+                snapshot.affected_people_estimate if snapshot else None
+            ),
+            importance_label=(
+                self.impact_scores.importance_label(snapshot.public_impact_score)
+                if snapshot
+                else None
+            ),
             cover_image_url=self._cover_image_url(issue),
             source_locale=issue.source_locale,
-            attachments=[
-                attachment for attachment in issue.attachments
-            ],
+            attachments=[attachment for attachment in issue.attachments],
             created_at=issue.created_at,
             updated_at=issue.updated_at,
+        )
+
+    def _to_public_map_marker(self, issue: Issue, snapshot) -> PublicIssueMapMarkerRead:
+        return PublicIssueMapMarkerRead(
+            id=issue.id,
+            title=issue.title,
+            latitude=issue.latitude,
+            longitude=issue.longitude,
+            category=IssueCategoryRead.model_validate(issue.category),
+            location_snippet=self._location_snippet(issue),
+            support_count=int(snapshot.signals.get("unique_supporters", 0)) if snapshot else 0,
+            public_impact_score=snapshot.public_impact_score if snapshot else None,
+            affected_people_estimate=(
+                snapshot.affected_people_estimate if snapshot else None
+            ),
+            importance_label=(
+                self.impact_scores.importance_label(snapshot.public_impact_score)
+                if snapshot
+                else None
+            ),
         )
 
     def _cover_image_url(self, issue: Issue) -> str | None:
@@ -396,51 +399,19 @@ class PublicIssueService:
         return f"{issue.latitude:.3f}, {issue.longitude:.3f}"
 
     @staticmethod
-    def _importance_label(support_count: int) -> str | None:
-        if support_count >= 12:
-            return "High community support"
-        if support_count >= 5:
-            return "Building traction"
-        return None
-
-    @staticmethod
-    def _tokenize(value: str) -> set[str]:
-        return set(TOKEN_PATTERN.findall(value.lower()))
-
-    @staticmethod
-    def _token_overlap_score(left: set[str], right: set[str]) -> float:
-        if not left or not right:
-            return 0.0
-        overlap = left & right
-        union = left | right
-        return len(overlap) / len(union)
-
-    @staticmethod
-    def _distance_km(
-        lat_a: float,
-        lon_a: float,
-        lat_b: float,
-        lon_b: float,
-    ) -> float:
-        radius_km = 6371.0
-        lat_a_rad = math.radians(lat_a)
-        lat_b_rad = math.radians(lat_b)
-        delta_lat = math.radians(lat_b - lat_a)
-        delta_lon = math.radians(lon_b - lon_a)
-
-        haversine = (
-            math.sin(delta_lat / 2) ** 2
-            + math.cos(lat_a_rad)
-            * math.cos(lat_b_rad)
-            * math.sin(delta_lon / 2) ** 2
+    def _should_capture_duplicate_signal(payload: IssueSupportExistingRequest) -> bool:
+        return any(
+            value
+            for value in (
+                payload.candidate_title,
+                payload.candidate_description,
+                payload.candidate_category_id,
+                payload.candidate_latitude,
+                payload.candidate_longitude,
+                payload.similarity_score,
+                payload.distance_km,
+                payload.text_similarity,
+                payload.reason_breakdown,
+                payload.image_hashes,
+            )
         )
-        return radius_km * 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine))
-
-    @staticmethod
-    def _normalize_text(value: str, *, max_length: int) -> str:
-        normalized = re.sub(r"\s+", " ", value).strip()
-        normalized = re.sub(r"([!?.,])\1+", r"\1", normalized)
-        normalized = normalized[:max_length].strip()
-        if normalized.isupper():
-            normalized = normalized.title()
-        return normalized

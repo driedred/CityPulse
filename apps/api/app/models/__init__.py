@@ -2,6 +2,8 @@ from app.models.admin_action_log import AdminActionLog
 from app.models.issue import Issue
 from app.models.issue_attachment import IssueAttachment
 from app.models.issue_category import IssueCategory
+from app.models.issue_duplicate_link import IssueDuplicateLink
+from app.models.issue_impact_snapshot import IssueImpactSnapshot
 from app.models.moderation_result import ModerationResult
 from app.models.support_ticket import SupportTicket
 from app.models.swipe_feedback import SwipeFeedback
@@ -11,6 +13,8 @@ from app.models.user import User
 __all__ = [
     "AdminActionLog",
     "Issue",
+    "IssueDuplicateLink",
+    "IssueImpactSnapshot",
     "IssueAttachment",
     "IssueCategory",
     "ModerationResult",

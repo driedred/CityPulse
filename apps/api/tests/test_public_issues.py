@@ -86,7 +86,7 @@ async def test_public_issue_feed_feedback_duplicate_and_rewrite(
     feed_body = feed_response.json()
     assert len(feed_body) == 1
     assert feed_body[0]["support_count"] == 1
-    assert feed_body[0]["importance_label"] is None
+    assert feed_body[0]["importance_label"] is not None
 
     duplicate_response = await client.post(
         "/api/public/issues/duplicates",
@@ -101,6 +101,10 @@ async def test_public_issue_feed_feedback_duplicate_and_rewrite(
 
     assert duplicate_response.status_code == 200
     duplicate_body = duplicate_response.json()
+    assert duplicate_body["status"] in {
+        "possible_duplicates",
+        "high_confidence_duplicate",
+    }
     assert duplicate_body["matches"]
     assert duplicate_body["matches"][0]["issue"]["id"] == issue_id
 
