@@ -11,12 +11,14 @@ from app.models.enums import UserRole
 
 if TYPE_CHECKING:
     from app.models.admin_action_log import AdminActionLog
+    from app.models.integrity_event import IntegrityEvent
     from app.models.issue import Issue
     from app.models.issue_attachment import IssueAttachment
     from app.models.issue_duplicate_link import IssueDuplicateLink
     from app.models.support_ticket import SupportTicket
     from app.models.swipe_feedback import SwipeFeedback
     from app.models.ticket_message import TicketMessage
+    from app.models.user_integrity_snapshot import UserIntegritySnapshot
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -55,4 +57,13 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     created_duplicate_links: Mapped[list[IssueDuplicateLink]] = relationship(
         back_populates="created_by_user"
+    )
+    integrity_snapshot: Mapped[UserIntegritySnapshot | None] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    integrity_events: Mapped[list[IntegrityEvent]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
     )

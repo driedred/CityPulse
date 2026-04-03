@@ -67,6 +67,11 @@ const STEP_LABELS = [
   appCopy.create.stepLocation,
   appCopy.create.stepReview,
 ] as const;
+const MODERATION_PREVIEW_VARIANTS = [
+  { maxDimension: 1280, quality: 0.72 },
+  { maxDimension: 960, quality: 0.62 },
+  { maxDimension: 720, quality: 0.54 },
+] as const;
 
 function sanitizeFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").toLowerCase();
@@ -78,6 +83,56 @@ function createStorageKey(issueId: string, fileName: string) {
       ? crypto.randomUUID()
       : `${Date.now()}`;
   return `issues/${issueId}/${randomPart}-${sanitizeFileName(fileName)}`;
+}
+
+function loadImageElement(objectUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image preview could not be prepared."));
+    image.src = objectUrl;
+  });
+}
+
+async function createModerationImagePreview(file: File) {
+  if (typeof window === "undefined" || !file.type.startsWith("image/")) {
+    return null;
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await loadImageElement(objectUrl);
+    let lastDataUrl: string | null = null;
+
+    for (const variant of MODERATION_PREVIEW_VARIANTS) {
+      const longestEdge = Math.max(image.naturalWidth, image.naturalHeight);
+      const scale =
+        longestEdge > variant.maxDimension ? variant.maxDimension / longestEdge : 1;
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        return null;
+      }
+
+      context.drawImage(image, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", variant.quality);
+      lastDataUrl = dataUrl;
+
+      if (dataUrl.length <= 1_500_000) {
+        return dataUrl;
+      }
+    }
+
+    return lastDataUrl;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 function getSubmittedIssueFeedback(issue: Issue) {
@@ -397,16 +452,24 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
         source_locale: locale,
       });
 
+      let finalIssue = createdIssue;
+
       for (const photo of photoDrafts) {
+        const moderationImageUrl = await createModerationImagePreview(photo.file);
         await apiClient.createAttachmentMetadata(authToken, createdIssue.id, {
           original_filename: photo.file.name,
           content_type: photo.file.type || "application/octet-stream",
           size_bytes: photo.file.size,
           storage_key: createStorageKey(createdIssue.id, photo.file.name),
+          moderation_image_url: moderationImageUrl,
         });
       }
 
-      setSubmittedIssue(createdIssue);
+      if (photoDrafts.length > 0) {
+        finalIssue = await apiClient.getOwnIssue(authToken, createdIssue.id);
+      }
+
+      setSubmittedIssue(finalIssue);
       resetFlow();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : appCopy.issueViews.errorTitle);
@@ -495,6 +558,9 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {appCopy.create.photoHint}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {appCopy.create.photoModerationNote}
               </p>
               <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/70 bg-card px-4 py-2 text-sm font-semibold text-foreground">
                 <Upload className="h-4 w-4" />

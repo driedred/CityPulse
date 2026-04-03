@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentOptionalUser, CurrentUser, SessionDep
 from app.schemas.issue import (
     IssueCategoryRead,
     IssueDuplicateSuggestionRequest,
@@ -128,10 +128,11 @@ async def suggest_issue_duplicates(
 @router.post("/issues/rewrite", response_model=IssueRewriteResponse)
 async def rewrite_issue_text(
     payload: IssueRewriteRequest,
+    current_user: CurrentOptionalUser,
     session: SessionDep,
 ) -> IssueRewriteResponse:
     service = PublicIssueService(session)
-    return await service.rewrite_issue_text(payload)
+    return await service.rewrite_issue_text(payload, current_user=current_user)
 
 
 @router.post("/issues/{issue_id}/feedback", response_model=IssueFeedbackRead)
@@ -144,7 +145,7 @@ async def record_issue_feedback(
     service = PublicIssueService(session)
     return await service.record_feedback(
         issue_id=issue_id,
-        user_id=current_user.id,
+        user=current_user,
         action=payload.action,
     )
 
@@ -159,6 +160,6 @@ async def support_existing_issue(
     service = PublicIssueService(session)
     return await service.support_existing_issue(
         issue_id=issue_id,
-        user_id=current_user.id,
+        user=current_user,
         payload=payload,
     )

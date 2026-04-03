@@ -3,6 +3,7 @@ from app.schemas.common import ErrorResponse
 from app.schemas.health import HealthResponse
 from app.schemas.issue import (
     AdminModerationIssueRead,
+    AIImageModerationStructuredResponse,
     AIRewriteStructuredResponse,
     DeterministicModerationDecision,
     IssueAttachmentCreate,
@@ -36,14 +37,26 @@ from app.schemas.support_ticket import (
     SupportTicketRead,
     TicketMessageRead,
 )
-from app.schemas.user import UserRead
+from app.schemas.user import (
+    AdminUserIdentityRead,
+    IntegrityEventRead,
+    IntegrityFactorRead,
+    UserIntegrityCompactRead,
+    UserIntegrityDetailRead,
+    UserIntegritySummaryRead,
+    UserRead,
+)
 
 __all__ = [
     "ErrorResponse",
     "HealthResponse",
     "AdminModerationIssueRead",
+    "AIImageModerationStructuredResponse",
     "AIRewriteStructuredResponse",
+    "AdminUserIdentityRead",
     "DeterministicModerationDecision",
+    "IntegrityEventRead",
+    "IntegrityFactorRead",
     "IssueAttachmentCreate",
     "IssueAttachmentRead",
     "IssueCategoryRead",
@@ -75,5 +88,8 @@ __all__ = [
     "SupportTicketRead",
     "TicketMessageRead",
     "TokenResponse",
+    "UserIntegrityCompactRead",
+    "UserIntegrityDetailRead",
+    "UserIntegritySummaryRead",
     "UserRead",
 ]

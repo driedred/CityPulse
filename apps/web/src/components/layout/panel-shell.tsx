@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { appCopy } from "@/content/copy";
 
 type PanelShellProps = Readonly<{
   children: React.ReactNode;
@@ -62,11 +63,13 @@ export function PanelShell({
 
             <div className="flex gap-3">
               <Button asChild variant={isDark ? "secondary" : "outline"}>
-                <Link href={`/${locale}`}>Public landing</Link>
+                <Link href={`/${locale}`}>{appCopy.panelShell.publicLanding}</Link>
               </Button>
               <Button asChild variant={isDark ? "outline" : "default"}>
                 <Link href={isDark ? `/${locale}/dashboard` : `/${locale}/admin`}>
-                  {isDark ? "Citizen view" : "Admin view"}
+                  {isDark
+                    ? appCopy.panelShell.citizenView
+                    : appCopy.panelShell.adminView}
                 </Link>
               </Button>
             </div>

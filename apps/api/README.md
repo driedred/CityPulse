@@ -17,11 +17,21 @@ Backend service for CityPulse built with FastAPI, SQLAlchemy, Alembic, and JWT a
 - Set `OPENAI_API_KEY` to enable live OpenAI-backed contextual moderation and rewrite calls.
 - `OPENAI_API_BASE_URL`, `OPENAI_TIMEOUT_SECONDS`, and `OPENAI_MAX_RETRIES` control network behavior for the OpenAI client.
 
+## Integrity layer
+
+- User trust and abuse snapshots are stored in `user_integrity_snapshots`.
+- Operational abuse events are logged in `integrity_events`.
+- Trust weighting is bounded and feeds impact scoring internally.
+- Default thresholds and formulas are documented in `../../docs/trust-and-abuse.md`.
+
 ## Implemented endpoints
 
 - `GET /api/admin/moderation/issues`
 - `GET /api/admin/moderation/issues/{issue_id}`
 - `POST /api/admin/moderation/issues/{issue_id}/rerun`
+- `GET /api/admin/users`
+- `GET /api/admin/users/{user_id}/integrity`
+- `POST /api/admin/users/{user_id}/integrity/recalculate`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/users/me`

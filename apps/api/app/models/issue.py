@@ -93,9 +93,11 @@ class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         if not self.moderation_results:
             return None
         return max(
-            self.moderation_results,
-            key=lambda item: (
-                item.created_at,
-                1 if item.layer == ModerationLayer.LLM else 0,
+            enumerate(self.moderation_results),
+            key=lambda entry: (
+                entry[1].created_at,
+                entry[1].updated_at,
+                entry[0],
+                1 if entry[1].layer == ModerationLayer.LLM else 0,
             ),
-        )
+        )[1]

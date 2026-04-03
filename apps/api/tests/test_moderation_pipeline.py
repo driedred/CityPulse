@@ -7,21 +7,29 @@ from app.core.security import hash_password
 from app.models import User
 from app.models.enums import UserRole
 from app.schemas.issue import (
+    AIImageModerationStructuredResponse,
     AIRewriteStructuredResponse,
     DeterministicModerationDecision,
     IssueRewriteRequest,
     ModerationReasonRead,
 )
 from app.services.ai_rewrite import AIRewriteService
+from app.services.image_moderation import ImageModerationService
 from app.services.llm_moderation import LLMModerationService
-from app.services.moderation_models import ModerationSubmission
+from app.services.moderation_models import (
+    ModerationAttachmentDescriptor,
+    ModerationSubmission,
+)
 from app.services.openai_client import AIServiceError
 
 
 class FailingStructuredClient:
+    def __init__(self, raw_output: str | None = None) -> None:
+        self.raw_output = raw_output
+
     async def generate_structured_output(self, **kwargs):
         del kwargs
-        raise AIServiceError("service unavailable")
+        raise AIServiceError("service unavailable", raw_output=self.raw_output)
 
 
 class FakeStructuredClient:
@@ -237,3 +245,185 @@ async def test_ai_rewrite_service_accepts_structured_openai_output() -> None:
     assert response.rewritten_title == "Damaged bus shelter on Pine Avenue"
     assert "clarified the request" in response.explanation
     assert response.tone_classification == "frustrated"
+
+
+async def test_image_moderation_service_rejects_explicit_visual_content() -> None:
+    service = ImageModerationService(
+        client=FakeStructuredClient(
+            AIImageModerationStructuredResponse(
+                outcome="reject",
+                confidence=0.97,
+                summary="The image contains explicit nudity.",
+                user_safe_explanation="The attached photo cannot be accepted.",
+                internal_notes="Visible genital content detected in the uploaded image.",
+                machine_reasons=[
+                    ModerationReasonRead(
+                        code="explicit_nudity_detected",
+                        label="Visible genitals or explicit nudity were detected.",
+                        severity="high",
+                    )
+                ],
+                matches_issue=False,
+                relevance_score=0.04,
+                contains_explicit_nudity=True,
+                contains_graphic_violence=False,
+                flags={"policy_bucket": "sexual_content"},
+            )
+        )
+    )
+
+    submission = ModerationSubmission(
+        issue_id=UUID("11111111-1111-1111-1111-111111111111"),
+        author_id=UUID("22222222-2222-2222-2222-222222222222"),
+        title="Unsafe graffiti on public wall",
+        short_description="An explicit image was painted on a wall near the school.",
+        category_slug="safety",
+        source_locale="en",
+        latitude=43.24,
+        longitude=76.89,
+        attachments=(
+            ModerationAttachmentDescriptor(
+                original_filename="wall-photo.jpg",
+                content_type="image/jpeg",
+                size_bytes=1024,
+                moderation_image_url="data:image/jpeg;base64,AAAA",
+            ),
+        ),
+    )
+
+    decision = await service.review(submission)
+
+    assert decision is not None
+    assert decision.outcome == "reject"
+    assert decision.flags["image_reviewed"] is True
+    assert any(reason.code == "explicit_nudity_detected" for reason in decision.machine_reasons)
+
+
+async def test_image_moderation_service_escalates_context_mismatch() -> None:
+    service = ImageModerationService(
+        client=FakeStructuredClient(
+            AIImageModerationStructuredResponse(
+                outcome="approve",
+                confidence=0.74,
+                summary="The image is not overtly unsafe.",
+                user_safe_explanation="The attached photo needs a quick review.",
+                internal_notes="The image appears to show an unrelated indoor portrait.",
+                machine_reasons=[],
+                matches_issue=False,
+                relevance_score=0.09,
+                contains_explicit_nudity=False,
+                contains_graphic_violence=False,
+                flags={"detected_scene": "portrait"},
+            )
+        )
+    )
+
+    submission = ModerationSubmission(
+        issue_id=UUID("33333333-3333-3333-3333-333333333333"),
+        author_id=UUID("44444444-4444-4444-4444-444444444444"),
+        title="Blocked storm drain on Oak Street",
+        short_description="The storm drain is clogged after rain and water is pooling.",
+        category_slug="roads",
+        source_locale="en",
+        latitude=43.22,
+        longitude=76.91,
+        attachments=(
+            ModerationAttachmentDescriptor(
+                original_filename="portrait.jpg",
+                content_type="image/jpeg",
+                size_bytes=2048,
+                moderation_image_url="data:image/jpeg;base64,BBBB",
+            ),
+        ),
+    )
+
+    decision = await service.review(submission)
+
+    assert decision is not None
+    assert decision.outcome == "needs_manual_review"
+    assert any(reason.code == "image_context_mismatch" for reason in decision.machine_reasons)
+
+
+async def test_image_moderation_service_blocks_refusal_like_model_output() -> None:
+    service = ImageModerationService(
+        client=FailingStructuredClient(raw_output="I can't help with that request.")
+    )
+
+    submission = ModerationSubmission(
+        issue_id=UUID("55555555-5555-5555-5555-555555555555"),
+        author_id=UUID("66666666-6666-6666-6666-666666666666"),
+        title="Broken park light",
+        short_description="The park light has failed and the path is dark at night.",
+        category_slug="lighting",
+        source_locale="en",
+        latitude=43.21,
+        longitude=76.87,
+        attachments=(
+            ModerationAttachmentDescriptor(
+                original_filename="night-photo.jpg",
+                content_type="image/jpeg",
+                size_bytes=4096,
+                moderation_image_url="data:image/jpeg;base64,CCCC",
+            ),
+        ),
+    )
+
+    decision = await service.review(submission)
+
+    assert decision is not None
+    assert decision.outcome == "reject"
+    assert decision.flags["fallback"] is True
+    assert any(
+        reason.code == "image_model_refusal_sensitive_content"
+        for reason in decision.machine_reasons
+    )
+
+
+async def test_attachment_metadata_can_reject_issue_after_initial_submit(
+    client: AsyncClient,
+    seeded_category_id: str,
+) -> None:
+    token = await _register_and_login(
+        client,
+        email="image-attachment@example.com",
+        full_name="Image Attachment",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_response = await client.post(
+        "/api/issues",
+        headers=headers,
+        json={
+            "title": "Broken playground bench",
+            "short_description": "The wooden bench near the playground is broken and splintered.",
+            "category_id": seeded_category_id,
+            "latitude": 43.2389,
+            "longitude": 76.8897,
+            "source_locale": "en",
+        },
+    )
+
+    assert create_response.status_code == 201
+    issue_id = create_response.json()["id"]
+    assert create_response.json()["status"] == "approved"
+
+    attachment_response = await client.post(
+        f"/api/issues/{issue_id}/attachments",
+        headers=headers,
+        json={
+            "original_filename": "public-penis-photo.jpg",
+            "content_type": "image/jpeg",
+            "size_bytes": 8192,
+            "storage_key": f"issues/{issue_id}/public-penis-photo.jpg",
+        },
+    )
+
+    assert attachment_response.status_code == 201
+
+    issue_response = await client.get(f"/api/issues/{issue_id}", headers=headers)
+
+    assert issue_response.status_code == 200
+    issue_body = issue_response.json()
+    assert issue_body["status"] == "rejected"
+    assert issue_body["latest_moderation"]["decision_code"] == "reject"
+    assert issue_body["latest_moderation"]["layer"] == "deterministic"

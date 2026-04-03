@@ -1,4 +1,5 @@
 from app.models.admin_action_log import AdminActionLog
+from app.models.integrity_event import IntegrityEvent
 from app.models.issue import Issue
 from app.models.issue_attachment import IssueAttachment
 from app.models.issue_category import IssueCategory
@@ -9,6 +10,7 @@ from app.models.support_ticket import SupportTicket
 from app.models.swipe_feedback import SwipeFeedback
 from app.models.ticket_message import TicketMessage
 from app.models.user import User
+from app.models.user_integrity_snapshot import UserIntegritySnapshot
 
 __all__ = [
     "AdminActionLog",
@@ -18,8 +20,10 @@ __all__ = [
     "IssueAttachment",
     "IssueCategory",
     "ModerationResult",
+    "IntegrityEvent",
     "SupportTicket",
     "SwipeFeedback",
     "TicketMessage",
     "User",
+    "UserIntegritySnapshot",
 ]

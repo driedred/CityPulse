@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.services.moderation_models import ModerationSubmission
+from typing import Any
+
+from app.services.moderation_models import (
+    ModerationAttachmentDescriptor,
+    ModerationSubmission,
+)
 
 
 def build_llm_moderation_system_prompt() -> str:
@@ -37,6 +42,47 @@ def build_llm_moderation_user_prompt(submission: ModerationSubmission) -> str:
         "Use manual review when context is ambiguous or when the submission needs human judgment. "
         "If the text implies a better category, suggest the normalized category slug."
     )
+
+
+def build_image_moderation_system_prompt() -> str:
+    return (
+        "You are a civic evidence moderation assistant for a public-interest reporting "
+        "platform. Review uploaded images for explicit sexual content, visible genitals, "
+        "pornographic framing, graphic gore, dismemberment, shocking violence, and "
+        "clear mismatch with the reported civic issue. Return structured JSON only. "
+        "Do not produce refusal text, safety lectures, or chain-of-thought. "
+        "If the image is ambiguous, low-confidence, or only loosely relevant, choose "
+        "needs_manual_review."
+    )
+
+
+def build_image_moderation_user_content(
+    submission: ModerationSubmission,
+    attachment: ModerationAttachmentDescriptor,
+) -> list[dict[str, Any]]:
+    prompt = (
+        "Review this uploaded image as potential evidence for a civic issue report.\n\n"
+        f"Issue ID: {submission.issue_id}\n"
+        f"Category slug: {submission.category_slug}\n"
+        f"Source locale: {submission.source_locale}\n"
+        f"Latitude: {submission.latitude}\n"
+        f"Longitude: {submission.longitude}\n"
+        f"Title: {submission.title}\n"
+        f"Description: {submission.short_description}\n"
+        f"Attachment filename: {attachment.original_filename}\n"
+        f"Attachment content_type: {attachment.content_type}\n"
+        f"Attachment size_bytes: {attachment.size_bytes}\n\n"
+        "Decide whether this image is acceptable to keep attached to the report. "
+        "Reject for explicit nudity, visible genitals, pornographic framing, or "
+        "graphic injury/dismemberment. Use needs_manual_review for ambiguity, "
+        "uncertain safety, or when the image does not clearly match the issue being "
+        "reported. Set matches_issue to true only when the image approximately fits "
+        "the stated civic problem and context."
+    )
+    return [
+        {"type": "input_text", "text": prompt},
+        {"type": "input_image", "image_url": attachment.moderation_image_url},
+    ]
 
 
 def build_ai_rewrite_system_prompt() -> str:

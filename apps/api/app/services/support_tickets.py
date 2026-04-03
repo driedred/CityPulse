@@ -8,13 +8,18 @@ from app.core.exceptions import AuthorizationError, NotFoundError
 from app.models import Issue, SupportTicket, TicketMessage, User
 from app.models.enums import SupportTicketStatus, UserRole
 from app.schemas.support_ticket import SupportTicketCreate
+from app.services.anti_abuse import AntiAbuseService
+from app.services.trust_scores import TrustScoreService
 
 
 class SupportTicketService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self.anti_abuse = AntiAbuseService(session)
+        self.trust_scores = TrustScoreService(session)
 
     async def create_ticket(self, author: User, payload: SupportTicketCreate) -> SupportTicket:
+        await self.anti_abuse.guard_ticket_creation(user=author)
         issue_id = payload.issue_id
 
         if issue_id is not None:
@@ -43,6 +48,8 @@ class SupportTicketService:
 
         self.session.add(ticket)
         await self.session.commit()
+        await self.anti_abuse.record_ticket_created(user=author, ticket=ticket)
+        await self.trust_scores.recalculate_user(author.id, commit=True)
         return await self.get_ticket(ticket.id)
 
     async def list_user_tickets(self, actor: User) -> list[SupportTicket]:

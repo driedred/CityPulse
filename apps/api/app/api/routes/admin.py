@@ -7,6 +7,8 @@ from app.api.deps import SessionDep, require_roles
 from app.models import User
 from app.models.enums import UserRole
 from app.schemas.issue import AdminModerationIssueRead, IssueModerationAuditRead
+from app.schemas.user import UserIntegrityDetailRead, UserIntegritySummaryRead
+from app.services.admin_integrity import AdminIntegrityService
 from app.services.admin_moderation import AdminModerationService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -47,3 +49,33 @@ async def rerun_issue_moderation(
 ) -> IssueModerationAuditRead:
     del admin_user
     return await AdminModerationService(session).rerun_issue(issue_id)
+
+
+@router.get("/users", response_model=list[UserIntegritySummaryRead])
+async def list_integrity_users(
+    admin_user: AdminUser,
+    session: SessionDep,
+    limit: int = 40,
+) -> list[UserIntegritySummaryRead]:
+    del admin_user
+    return await AdminIntegrityService(session).list_users(limit=min(limit, 80))
+
+
+@router.get("/users/{user_id}/integrity", response_model=UserIntegrityDetailRead)
+async def get_user_integrity_detail(
+    user_id: UUID,
+    admin_user: AdminUser,
+    session: SessionDep,
+) -> UserIntegrityDetailRead:
+    del admin_user
+    return await AdminIntegrityService(session).get_user_detail(user_id)
+
+
+@router.post("/users/{user_id}/integrity/recalculate", response_model=UserIntegrityDetailRead)
+async def recalculate_user_integrity(
+    user_id: UUID,
+    admin_user: AdminUser,
+    session: SessionDep,
+) -> UserIntegrityDetailRead:
+    del admin_user
+    return await AdminIntegrityService(session).recalculate_user(user_id)

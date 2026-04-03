@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -13,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models import Issue, IssueDuplicateLink, IssueImpactSnapshot, SwipeFeedback, User
+from app.models import Issue, IssueDuplicateLink, IssueImpactSnapshot, SwipeFeedback
 from app.models.enums import DuplicateResolutionStatus, IssueStatus, SwipeDirection
 from app.schemas.issue import IssueImpactAdminRead, IssueImpactFactorRead, IssuePublicImpactRead
 from app.services.intelligence_utils import (
@@ -24,6 +23,7 @@ from app.services.intelligence_utils import (
     round_public_people_estimate,
     saturating_ratio,
 )
+from app.services.trust_scores import TrustScoreService
 
 SCORABLE_STATUSES = (
     IssueStatus.PENDING_MODERATION,
@@ -70,11 +70,9 @@ class ImpactScoreConfig:
 
 
 @dataclass(frozen=True)
-class UserTrustStats:
-    authored_issue_count: int = 0
-    published_issue_count: int = 0
-    rejected_issue_count: int = 0
-    support_action_count: int = 0
+class UserTrustSignal:
+    trust_score: float = 55.0
+    weight_multiplier: float = 1.0
 
 
 class ImpactScoreService:
@@ -208,16 +206,20 @@ class ImpactScoreService:
             )
         ).all()
         supporter_ids = {row.user_id for row in support_rows}
-        trust_map = await self._load_trust_scores(supporter_ids | {issue.author_id})
+        trust_map = await self._load_trust_signals(supporter_ids | {issue.author_id})
 
         unique_supporters = len(support_rows)
         weighted_support_total = round(
-            sum(trust_map.get(row.user_id, 0.6) for row in support_rows),
+            sum(
+                trust_map.get(row.user_id, UserTrustSignal()).weight_multiplier
+                for row in support_rows
+            ),
             3,
         )
         nearby_related_reports = await self._count_nearby_related_reports(issue)
         duplicate_cluster_size = await self._count_duplicate_cluster(issue.id)
-        author_trust_score = trust_map.get(issue.author_id, 0.6)
+        author_trust_signal = trust_map.get(issue.author_id, UserTrustSignal())
+        author_trust_score = author_trust_signal.trust_score
         moderation_confidence = self._moderation_confidence(issue)
         quality_score = self._issue_quality_score(issue)
         moderation_quality_signal = clamp(
@@ -301,7 +303,7 @@ class ImpactScoreService:
                 weights.author_trust,
                 self._normalized_trust(author_trust_score),
                 round(author_trust_score, 3),
-                {},
+                {"weight_multiplier": author_trust_signal.weight_multiplier},
             ),
         ]
 
@@ -340,6 +342,7 @@ class ImpactScoreService:
             "nearby_related_reports": nearby_related_reports,
             "duplicate_cluster_size": duplicate_cluster_size,
             "author_trust_score": round(author_trust_score, 3),
+            "author_trust_weight_multiplier": author_trust_signal.weight_multiplier,
             "moderation_confidence": round(moderation_confidence, 3),
             "quality_score": round(quality_score, 3),
             "category_severity_baseline": issue.category.severity_baseline,
@@ -377,65 +380,26 @@ class ImpactScoreService:
         existing_snapshot.breakdown = breakdown
         return existing_snapshot
 
-    async def _load_trust_scores(self, user_ids: set[UUID]) -> dict[UUID, float]:
+    async def _load_trust_signals(
+        self,
+        user_ids: set[UUID],
+    ) -> dict[UUID, UserTrustSignal]:
         if not user_ids:
             return {}
-
-        users = (await self.session.scalars(select(User).where(User.id.in_(user_ids)))).all()
-        authored_rows = await self.session.execute(
-            select(Issue.author_id, Issue.status, func.count(Issue.id))
-            .where(Issue.author_id.in_(user_ids))
-            .group_by(Issue.author_id, Issue.status)
+        snapshots = await TrustScoreService(self.session).ensure_user_snapshots(
+            list(user_ids),
+            commit=False,
         )
-        support_rows = await self.session.execute(
-            select(SwipeFeedback.user_id, func.count(SwipeFeedback.id))
-            .where(
-                SwipeFeedback.user_id.in_(user_ids),
-                SwipeFeedback.direction == SwipeDirection.SUPPORT,
+        return {
+            user_id: UserTrustSignal(
+                trust_score=snapshot.trust_score,
+                weight_multiplier=snapshot.trust_weight_multiplier,
             )
-            .group_by(SwipeFeedback.user_id)
-        )
-
-        authored_counts: dict[UUID, dict[IssueStatus, int]] = defaultdict(dict)
-        for author_id, status, count in authored_rows.all():
-            authored_counts[author_id][status] = count
-
-        support_counts = {user_id: count for user_id, count in support_rows.all()}
-        trust_scores: dict[UUID, float] = {}
-
-        for user in users:
-            status_counts = authored_counts.get(user.id, {})
-            authored_issue_count = sum(status_counts.values())
-            stats = UserTrustStats(
-                authored_issue_count=authored_issue_count,
-                published_issue_count=(
-                    status_counts.get(IssueStatus.APPROVED, 0)
-                    + status_counts.get(IssueStatus.PUBLISHED, 0)
-                ),
-                rejected_issue_count=status_counts.get(IssueStatus.REJECTED, 0),
-                support_action_count=support_counts.get(user.id, 0),
-            )
-            trust_scores[user.id] = self._trust_score(user, stats)
-
-        return trust_scores
-
-    def _trust_score(self, user: User, stats: UserTrustStats) -> float:
-        authored_issue_count = max(stats.authored_issue_count, 1)
-        published_ratio = stats.published_issue_count / authored_issue_count
-        rejection_ratio = stats.rejected_issue_count / authored_issue_count
-        account_age_days = self._days_since(user.created_at)
-        trust = (
-            0.55
-            + clamp(account_age_days / 365, maximum=1.0) * 0.18
-            + clamp(stats.authored_issue_count / 10, maximum=1.0) * 0.12
-            + clamp(stats.support_action_count / 30, maximum=1.0) * 0.1
-            + published_ratio * 0.1
-            - rejection_ratio * 0.12
-        )
-        return round(clamp(trust, minimum=0.45, maximum=1.25), 3)
+            for user_id, snapshot in snapshots.items()
+        }
 
     def _normalized_trust(self, trust_score: float) -> float:
-        return clamp((trust_score - 0.45) / (1.25 - 0.45))
+        return clamp((trust_score - 25) / (95 - 25))
 
     async def _count_nearby_related_reports(self, issue: Issue) -> int:
         cutoff = datetime.now(UTC) - timedelta(days=self.config.related_report_window_days)

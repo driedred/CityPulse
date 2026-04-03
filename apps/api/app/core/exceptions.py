@@ -64,6 +64,21 @@ class ConflictError(AppError):
         )
 
 
+class TooManyRequestsError(AppError):
+    def __init__(
+        self,
+        message: str = "Too many requests. Please slow down and try again shortly.",
+        *,
+        details: Any | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            code="rate_limited",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            details=details,
+        )
+
+
 def _build_error_response(
     request: Request,
     *,

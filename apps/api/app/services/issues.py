@@ -14,7 +14,9 @@ from app.schemas.issue import (
     IssueCreate,
     IssueRead,
 )
+from app.services.anti_abuse import AntiAbuseService
 from app.services.moderation import ModerationDispatcher, serialize_moderation_result_user
+from app.services.trust_scores import TrustScoreService
 
 
 class IssueService:
@@ -25,8 +27,14 @@ class IssueService:
     ) -> None:
         self.session = session
         self.moderation_dispatcher = moderation_dispatcher
+        self.anti_abuse = AntiAbuseService(session)
+        self.trust_scores = TrustScoreService(session)
 
     async def create_issue(self, author: User, payload: IssueCreate) -> Issue:
+        duplicate_result = await self.anti_abuse.guard_issue_submission(
+            user=author,
+            payload=payload,
+        )
         category = await self.session.scalar(
             select(IssueCategory).where(
                 IssueCategory.id == payload.category_id,
@@ -51,6 +59,13 @@ class IssueService:
         self.session.add(issue)
         await self.session.commit()
         await self.moderation_dispatcher.enqueue_issue(issue.id)
+        issue = await self.get_issue(issue.id)
+        await self.anti_abuse.record_issue_submission_created(
+            user=author,
+            issue=issue,
+            duplicate_status=duplicate_result.status if duplicate_result else None,
+        )
+        await self.trust_scores.recalculate_user(author.id, commit=True)
         return await self.get_issue(issue.id)
 
     async def create_attachment_metadata(
@@ -81,6 +96,7 @@ class IssueService:
             original_filename=payload.original_filename,
             content_type=payload.content_type,
             size_bytes=payload.size_bytes,
+            moderation_image_url=payload.moderation_image_url,
         )
         self.session.add(attachment)
         await self.session.commit()
@@ -115,6 +131,12 @@ class IssueService:
         )
         if issue is None:
             raise NotFoundError("Issue was not found.")
+        return issue
+
+    async def get_issue_for_actor(self, issue_id, actor: User) -> Issue:
+        issue = await self.get_issue(issue_id)
+        if actor.role != UserRole.ADMIN and issue.author_id != actor.id:
+            raise AuthorizationError("You do not have access to this issue.")
         return issue
 
     @staticmethod

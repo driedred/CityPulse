@@ -19,6 +19,15 @@ export const appCopy = {
     description: "Monorepo scaffold for civic reporting, moderation, and operations.",
     readiness: "Prepared for multilingual, AI-assisted, and role-separated product growth.",
   },
+  panelShell: {
+    publicLanding: "Public landing",
+    citizenView: "Citizen view",
+    adminView: "Admin view",
+    adminSectionLabel: "Admin panel",
+    adminTitle: "Operations, moderation, and civic response",
+    adminDescription:
+      "A separate route group for internal workflows, moderation review, and integrity controls.",
+  },
   auth: {
     title: "Citizen access",
     subtitle:
@@ -176,7 +185,9 @@ export const appCopy = {
     categoryPlaceholder: "Select a category",
     photoLabel: "Photos",
     photoHint:
-      "This commit stores upload metadata and local previews so storage delivery can be plugged in later without changing the form.",
+      "Photos help corroborate the issue. Each image is screened for safety and rough relevance before the report can move forward.",
+    photoModerationNote:
+      "A lightweight moderation preview is prepared locally so unsafe or clearly unrelated photos do not pass automatically.",
     photoAction: "Add photos",
     photoEmpty: "No photos selected yet.",
     removePhoto: "Remove photo",
@@ -237,7 +248,7 @@ export const appCopy = {
     rewriteSaved: "Rewrite applied to the draft.",
     locationError: "Location access is unavailable on this device or was denied.",
     metadataPending:
-      "Photos are attached as metadata placeholders in this commit so storage upload can be integrated without reworking the flow.",
+      "Photos are still registered as metadata placeholders for storage delivery, but each image is also screened against unsafe or clearly unrelated content before publication.",
   },
   myIssues: {
     title: "My issues",
@@ -274,6 +285,40 @@ export const appCopy = {
     internalNotesLabel: "Internal notes",
     machineReasonsLabel: "Machine reasons",
     latestDecisionLabel: "Latest result",
+    authorLabel: "Author",
+    trustScoreLabel: "Trust score",
+    abuseRiskLabel: "Abuse risk",
+    weightLabel: "Weight",
+    openUserAction: "Open user detail",
+    watchlistTitle: "User watchlist",
+    watchlistBody:
+      "Prioritize accounts with elevated abuse risk or unusually low trust so moderation and integrity review stay connected.",
+  },
+  adminIntegrity: {
+    title: "User integrity detail",
+    description:
+      "Inspect trust weighting, abuse risk, recent integrity events, and recommended operational actions for a single account.",
+    adminOnly:
+      "An administrator account is required to inspect user integrity details.",
+    metricsTitle: "Current integrity profile",
+    trustFactorsTitle: "Trust factors",
+    abuseFactorsTitle: "Abuse factors",
+    recommendedActionsTitle: "Recommended actions",
+    recentEventsTitle: "Recent integrity events",
+    userMetaTitle: "User identity",
+    summaryLabel: "Summary",
+    recalculateAction: "Recalculate integrity",
+    backToModeration: "Back to moderation",
+    emptyEvents: "No recent integrity events were recorded for this account.",
+    emptyFactors: "No material factors are currently changing this score.",
+    noUser: "The requested user integrity record could not be loaded.",
+    emailLabel: "Email",
+    roleLabel: "Role",
+    localeLabel: "Locale",
+    lastLoginLabel: "Last login",
+    joinedLabel: "Joined",
+    sanctionsLabel: "Sanctions",
+    updatedLabel: "Last recalculated",
   },
   common: {
     loading: "Loading",
@@ -298,5 +343,8 @@ export const appCopy = {
     manualReview: "Manual review",
     reviewRecommended: "Review recommended",
     supportRecommended: "Support recommended",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
   },
 } as const;

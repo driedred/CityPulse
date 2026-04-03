@@ -60,6 +60,34 @@ class DeterministicModerationConfig:
         "subscribe",
         "free money",
     )
+    explicit_attachment_terms: frozenset[str] = field(
+        default_factory=lambda: frozenset(
+            {
+                "nude",
+                "nudity",
+                "naked",
+                "porn",
+                "xxx",
+                "penis",
+                "vagina",
+                "genital",
+                "sex",
+            }
+        )
+    )
+    graphic_attachment_terms: frozenset[str] = field(
+        default_factory=lambda: frozenset(
+            {
+                "gore",
+                "dismember",
+                "beheaded",
+                "decapitated",
+                "corpse",
+                "mutilated",
+                "severed",
+            }
+        )
+    )
     thresholds: DeterministicModerationThresholds = field(
         default_factory=DeterministicModerationThresholds
     )
@@ -224,6 +252,39 @@ class DeterministicModerationService:
             )
 
         for attachment in submission.attachments:
+            attachment_name = attachment.original_filename.lower()
+            explicit_attachment_hits = sorted(
+                term
+                for term in self.config.explicit_attachment_terms
+                if term in attachment_name
+            )
+            if explicit_attachment_hits:
+                reasons.append(
+                    ModerationReasonRead(
+                        code="explicit_attachment_filename",
+                        label="Attachment metadata suggests explicit sexual content.",
+                        severity="high",
+                        evidence=", ".join(explicit_attachment_hits),
+                    )
+                )
+                break
+
+            graphic_attachment_hits = sorted(
+                term
+                for term in self.config.graphic_attachment_terms
+                if term in attachment_name
+            )
+            if graphic_attachment_hits:
+                reasons.append(
+                    ModerationReasonRead(
+                        code="graphic_attachment_filename",
+                        label="Attachment metadata suggests graphic violence or gore.",
+                        severity="high",
+                        evidence=", ".join(graphic_attachment_hits),
+                    )
+                )
+                break
+
             if not attachment.content_type or "/" not in attachment.content_type:
                 reasons.append(
                     ModerationReasonRead(
@@ -234,12 +295,25 @@ class DeterministicModerationService:
                     )
                 )
                 break
+            if not attachment.content_type.lower().startswith("image/"):
+                reasons.append(
+                    ModerationReasonRead(
+                        code="unsupported_attachment_type",
+                        label="The attachment is not a supported image upload.",
+                        severity="high",
+                        evidence=attachment.content_type,
+                    )
+                )
+                break
 
         reject_codes = {
             "coordinate_invalid",
             "hate_placeholder_pattern",
             "spam_marker",
             "copy_paste_spam",
+            "explicit_attachment_filename",
+            "graphic_attachment_filename",
+            "unsupported_attachment_type",
         }
         if "direct_abuse" in {reason.code for reason in reasons} and "profanity_language" in {
             reason.code for reason in reasons

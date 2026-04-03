@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError
-from app.models import Issue, IssueCategory, IssueDuplicateLink, SwipeFeedback
+from app.models import Issue, IssueCategory, IssueDuplicateLink, SwipeFeedback, User
 from app.models.enums import DuplicateResolutionStatus, IssueStatus, SwipeDirection
 from app.schemas.issue import (
     IssueCategoryRead,
@@ -25,9 +25,11 @@ from app.schemas.issue import (
     PublicIssueSummaryRead,
 )
 from app.services.ai_rewrite import AIRewriteService
+from app.services.anti_abuse import AntiAbuseService
 from app.services.duplicate_detection import DuplicateDetectionService
 from app.services.impact_scores import ImpactScoreService
 from app.services.intelligence_utils import distance_km, normalize_text
+from app.services.trust_scores import TrustScoreService
 
 
 @dataclass(slots=True)
@@ -47,6 +49,8 @@ class PublicIssueService:
         self.impact_scores = ImpactScoreService(session)
         self.duplicate_detection = DuplicateDetectionService(session)
         self.ai_rewrite = AIRewriteService()
+        self.anti_abuse = AntiAbuseService(session)
+        self.trust_scores = TrustScoreService(session)
 
     async def list_categories(self) -> list[IssueCategoryRead]:
         categories = await self.session.scalars(
@@ -107,7 +111,10 @@ class PublicIssueService:
     async def rewrite_issue_text(
         self,
         payload: IssueRewriteRequest,
+        *,
+        current_user: User | None = None,
     ) -> IssueRewriteResponse:
+        await self.anti_abuse.guard_rewrite_request(user=current_user)
         category_slug = None
         if payload.category_id is not None:
             category = await self.session.scalar(
@@ -116,6 +123,9 @@ class PublicIssueService:
             category_slug = category.slug if category else None
 
         response = await self.ai_rewrite.rewrite(payload, category_slug=category_slug)
+        await self.anti_abuse.record_rewrite_request(user=current_user)
+        if current_user is not None:
+            await self.trust_scores.recalculate_user(current_user.id, commit=True)
         return IssueRewriteResponse(
             rewritten_title=normalize_text(response.rewritten_title, max_length=160),
             rewritten_description=normalize_text(
@@ -130,16 +140,24 @@ class PublicIssueService:
         self,
         *,
         issue_id: UUID,
-        user_id: UUID,
+        user: User,
         action: SwipeDirection,
     ) -> IssueFeedbackRead:
         issue = await self._load_public_issue_for_feedback(issue_id)
+        await self.anti_abuse.guard_feedback(user=user, issue=issue, action=action)
         feedback, support_changed = await self._upsert_feedback(
             issue_id=issue.id,
-            user_id=user_id,
+            user_id=user.id,
             action=action,
         )
         await self.session.flush()
+        await self.anti_abuse.record_feedback_action(
+            user=user,
+            issue=issue,
+            action=action,
+            support_changed=support_changed,
+        )
+        await self.trust_scores.recalculate_user(user.id, commit=False)
         snapshot = await self.impact_scores.recalculate_issue(issue.id, commit=False)
         await self.session.commit()
 
@@ -156,21 +174,26 @@ class PublicIssueService:
         self,
         *,
         issue_id: UUID,
-        user_id: UUID,
+        user: User,
         payload: IssueSupportExistingRequest,
     ) -> IssueSupportExistingRead:
         issue = await self._load_public_issue_for_feedback(issue_id)
+        await self.anti_abuse.guard_feedback(
+            user=user,
+            issue=issue,
+            action=SwipeDirection.SUPPORT,
+        )
         _, support_changed = await self._upsert_feedback(
             issue_id=issue.id,
-            user_id=user_id,
+            user_id=user.id,
             action=SwipeDirection.SUPPORT,
         )
 
         duplicate_link = None
-        if self._should_capture_duplicate_signal(payload):
+        if support_changed and self._should_capture_duplicate_signal(payload):
             duplicate_link = IssueDuplicateLink(
                 canonical_issue_id=issue.id,
-                created_by_user_id=user_id,
+                created_by_user_id=user.id,
                 status=DuplicateResolutionStatus.SUPPORTED_EXISTING,
                 similarity_score=payload.similarity_score,
                 distance_km=payload.distance_km,
@@ -191,6 +214,12 @@ class PublicIssueService:
             self.session.add(duplicate_link)
 
         await self.session.flush()
+        await self.anti_abuse.record_support_existing_action(
+            user=user,
+            issue=issue,
+            support_changed=support_changed,
+        )
+        await self.trust_scores.recalculate_user(user.id, commit=False)
         snapshot = await self.impact_scores.recalculate_issue(issue.id, commit=False)
         await self.session.commit()
 

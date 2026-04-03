@@ -7,6 +7,7 @@ from app.schemas.issue import (
     LLMModerationDecision,
     ModerationReasonRead,
 )
+from app.services.image_moderation import ImageModerationService
 from app.services.intelligence_utils import normalize_text, tokenize
 from app.services.moderation_models import ModerationSubmission
 from app.services.openai_client import AIServiceError, OpenAIResponsesClient
@@ -35,9 +36,11 @@ class LLMModerationService:
         *,
         client: OpenAIResponsesClient | None = None,
         config: LLMModerationConfig | None = None,
+        image_service: ImageModerationService | None = None,
     ) -> None:
         self.client = client or OpenAIResponsesClient()
         self.config = config or LLMModerationConfig()
+        self.image_service = image_service or ImageModerationService(client=self.client)
 
     async def review(
         self,
@@ -46,25 +49,35 @@ class LLMModerationService:
         *,
         allowed_category_slugs: set[str],
     ) -> LLMModerationDecision:
+        image_decision = await self.image_service.review(submission)
+        if image_decision is not None and image_decision.outcome == "reject":
+            return self._combine_decisions(
+                text_decision=None,
+                image_decision=image_decision,
+            )
+
         try:
-            decision = await self.client.generate_structured_output(
+            text_decision = await self.client.generate_structured_output(
                 schema_name="citypulse_llm_moderation",
                 schema_model=LLMModerationDecision,
                 system_prompt=build_llm_moderation_system_prompt(),
                 user_prompt=build_llm_moderation_user_prompt(submission),
             )
-            if (
-                decision.normalized_category_slug
-                and decision.normalized_category_slug not in allowed_category_slugs
-            ):
-                decision = decision.model_copy(update={"normalized_category_slug": None})
-            return decision
+            text_decision = self._normalize_category(
+                text_decision,
+                allowed_category_slugs=allowed_category_slugs,
+            )
         except AIServiceError:
-            return self._fallback_decision(
+            text_decision = self._fallback_decision(
                 submission,
                 deterministic_decision,
                 allowed_category_slugs=allowed_category_slugs,
             )
+
+        return self._combine_decisions(
+            text_decision=text_decision,
+            image_decision=image_decision,
+        )
 
     def _fallback_decision(
         self,
@@ -134,8 +147,7 @@ class LLMModerationService:
                     "the local issue, its location, and observable facts."
                 ),
                 internal_notes=(
-                    "Fallback contextual moderation identified commercial or "
-                    "off-topic markers."
+                    "Fallback contextual moderation identified commercial or off-topic markers."
                 ),
                 machine_reasons=reasons,
                 normalized_category_slug=self._suggest_category(submission, allowed_category_slugs),
@@ -177,14 +189,143 @@ class LLMModerationService:
                 "Your report is specific enough to continue through the civic workflow."
             ),
             internal_notes=(
-                "Fallback contextual moderation approved the issue without "
-                "additional flags."
+                "Fallback contextual moderation approved the issue without additional flags."
             ),
             machine_reasons=[],
             normalized_category_slug=self._suggest_category(submission, allowed_category_slugs),
             escalation_required=False,
             flags={"fallback": True, "reason_codes": sorted(reason_codes)},
         )
+
+    @staticmethod
+    def _normalize_category(
+        decision: LLMModerationDecision,
+        *,
+        allowed_category_slugs: set[str],
+    ) -> LLMModerationDecision:
+        if (
+            decision.normalized_category_slug
+            and decision.normalized_category_slug not in allowed_category_slugs
+        ):
+            return decision.model_copy(update={"normalized_category_slug": None})
+        return decision
+
+    def _combine_decisions(
+        self,
+        *,
+        text_decision: LLMModerationDecision | None,
+        image_decision: LLMModerationDecision | None,
+    ) -> LLMModerationDecision:
+        if text_decision is None and image_decision is None:
+            raise ValueError("At least one moderation decision is required.")
+        if text_decision is None:
+            return image_decision  # type: ignore[return-value]
+        if image_decision is None:
+            return text_decision
+
+        if "reject" in {text_decision.outcome, image_decision.outcome}:
+            outcome = "reject"
+        elif "needs_manual_review" in {
+            text_decision.outcome,
+            image_decision.outcome,
+        }:
+            outcome = "needs_manual_review"
+        else:
+            outcome = "approve"
+
+        return LLMModerationDecision(
+            outcome=outcome,
+            confidence=max(text_decision.confidence, image_decision.confidence),
+            summary=self._compose_summary(
+                outcome=outcome,
+                text_decision=text_decision,
+                image_decision=image_decision,
+            ),
+            user_safe_explanation=self._compose_user_safe_explanation(
+                outcome=outcome,
+                text_decision=text_decision,
+                image_decision=image_decision,
+            ),
+            internal_notes=(
+                f"Text moderation: {text_decision.internal_notes} "
+                f"Image moderation: {image_decision.internal_notes}"
+            ),
+            machine_reasons=self._deduplicate_reasons(
+                [
+                    *text_decision.machine_reasons,
+                    *image_decision.machine_reasons,
+                ]
+            ),
+            normalized_category_slug=text_decision.normalized_category_slug,
+            escalation_required=(
+                outcome == "needs_manual_review"
+                or text_decision.escalation_required
+                or image_decision.escalation_required
+            ),
+            flags={
+                **text_decision.flags,
+                "image_reviewed": bool(image_decision.flags.get("image_reviewed")),
+                "image_moderation_checked": True,
+                "fallback": bool(text_decision.flags.get("fallback"))
+                or bool(image_decision.flags.get("fallback")),
+                "text_moderation": text_decision.flags,
+                "image_moderation": image_decision.flags,
+            },
+        )
+
+    @staticmethod
+    def _compose_summary(
+        *,
+        outcome: str,
+        text_decision: LLMModerationDecision,
+        image_decision: LLMModerationDecision,
+    ) -> str:
+        if outcome == "reject":
+            if image_decision.outcome == "reject":
+                return (
+                    "Contextual moderation rejected the report because an "
+                    "attachment was not acceptable."
+                )
+            return "Contextual moderation rejected the report."
+        if outcome == "needs_manual_review":
+            if image_decision.outcome == "needs_manual_review":
+                return (
+                    "Contextual moderation recommends manual review because an "
+                    "attachment needs verification."
+                )
+            return "Contextual moderation recommends manual review."
+        return text_decision.summary
+
+    @staticmethod
+    def _compose_user_safe_explanation(
+        *,
+        outcome: str,
+        text_decision: LLMModerationDecision,
+        image_decision: LLMModerationDecision,
+    ) -> str:
+        if outcome == "reject":
+            return (
+                image_decision.user_safe_explanation
+                if image_decision.outcome == "reject"
+                else text_decision.user_safe_explanation
+            )
+        if outcome == "needs_manual_review" and image_decision.outcome == "needs_manual_review":
+            return image_decision.user_safe_explanation
+        return text_decision.user_safe_explanation
+
+    @staticmethod
+    def _deduplicate_reasons(
+        reasons: list[ModerationReasonRead],
+    ) -> list[ModerationReasonRead]:
+        seen: set[tuple[str, str | None]] = set()
+        deduplicated: list[ModerationReasonRead] = []
+        for reason in reasons:
+            key = (reason.code, reason.evidence)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(reason)
+        return deduplicated
 
     def _suggest_category(
         self,

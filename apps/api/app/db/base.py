@@ -1,5 +1,6 @@
 from app.models import (  # noqa: F401
     AdminActionLog,
+    IntegrityEvent,
     Issue,
     IssueAttachment,
     IssueCategory,
@@ -8,6 +9,7 @@ from app.models import (  # noqa: F401
     SwipeFeedback,
     TicketMessage,
     User,
+    UserIntegritySnapshot,
 )
 from app.models.base import Base
 

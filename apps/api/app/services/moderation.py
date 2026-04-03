@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models import Issue, IssueCategory, ModerationResult
+from app.models import Issue, IssueCategory, ModerationResult, User
 from app.models.enums import (
     IssueStatus,
     ModerationLayer,
@@ -22,12 +22,14 @@ from app.schemas.issue import (
     IssueModerationUserRead,
     ModerationReasonRead,
 )
+from app.services.anti_abuse import AntiAbuseService
 from app.services.deterministic_moderation import DeterministicModerationService
 from app.services.llm_moderation import LLMModerationService
 from app.services.moderation_models import (
     ModerationAttachmentDescriptor,
     ModerationSubmission,
 )
+from app.services.trust_scores import TrustScoreService, serialize_integrity_compact
 
 
 class ModerationDispatcher(Protocol):
@@ -46,6 +48,8 @@ class ModerationPipelineService:
         self.session = session
         self.deterministic_service = deterministic_service or DeterministicModerationService()
         self.llm_service = llm_service or LLMModerationService()
+        self.anti_abuse = AntiAbuseService(session)
+        self.trust_scores = TrustScoreService(session)
 
     async def moderate_issue(self, issue_id: UUID) -> Issue:
         issue = await self._load_issue(issue_id)
@@ -76,7 +80,8 @@ class ModerationPipelineService:
             self._apply_issue_decision(issue, deterministic_result.status)
             await self.session.commit()
             await self.session.refresh(issue)
-            return issue
+            await self._finalize_integrity_updates(issue, deterministic_result)
+            return await self._load_issue(issue_id)
 
         llm_decision = await self.llm_service.review(
             submission,
@@ -113,13 +118,22 @@ class ModerationPipelineService:
         self._apply_issue_decision(issue, llm_result.status)
         await self.session.commit()
         await self.session.refresh(issue)
-        return issue
+        await self._finalize_integrity_updates(issue, llm_result)
+        return await self._load_issue(issue_id)
 
     async def get_issue_audit(self, issue_id: UUID) -> IssueModerationAuditRead:
         issue = await self._load_issue(issue_id)
+        author_snapshots = await self.trust_scores.ensure_user_snapshots(
+            [issue.author_id],
+            commit=True,
+        )
         latest_result = issue.latest_moderation_result
         return IssueModerationAuditRead(
             issue_id=issue.id,
+            author=serialize_integrity_compact(
+                issue.author,
+                author_snapshots.get(issue.author_id),
+            ),
             issue_status=issue.status,
             moderation_state=issue.moderation_state,
             latest_result=serialize_moderation_result_user(latest_result),
@@ -139,6 +153,7 @@ class ModerationPipelineService:
             .options(
                 selectinload(Issue.category),
                 selectinload(Issue.attachments),
+                selectinload(Issue.author).selectinload(User.integrity_snapshot),
                 selectinload(Issue.moderation_results),
             )
             .order_by(Issue.created_at.desc())
@@ -153,12 +168,30 @@ class ModerationPipelineService:
             .options(
                 selectinload(Issue.category),
                 selectinload(Issue.attachments),
+                selectinload(Issue.author).selectinload(User.integrity_snapshot),
                 selectinload(Issue.moderation_results),
             )
         )
         if issue is None:
             raise NotFoundError("Issue was not found.")
         return issue
+
+    async def _finalize_integrity_updates(
+        self,
+        issue: Issue,
+        result: ModerationResult,
+    ) -> None:
+        machine_reason_codes = [
+            reason.get("code", "")
+            for reason in result.machine_reasons
+            if isinstance(reason, dict)
+        ]
+        await self.anti_abuse.record_moderation_outcome(
+            issue=issue,
+            status=result.status,
+            machine_reason_codes=[code for code in machine_reason_codes if code],
+        )
+        await self.trust_scores.recalculate_user(issue.author_id, commit=True)
 
     async def _load_allowed_category_slugs(self) -> set[str]:
         categories = await self.session.scalars(
@@ -182,6 +215,7 @@ class ModerationPipelineService:
                     original_filename=attachment.original_filename,
                     content_type=attachment.content_type,
                     size_bytes=attachment.size_bytes,
+                    moderation_image_url=attachment.moderation_image_url,
                 )
                 for attachment in issue.attachments
             ),

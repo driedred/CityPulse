@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -15,7 +15,9 @@ SchemaModelT = TypeVar("SchemaModelT", bound=BaseModel)
 
 
 class AIServiceError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, raw_output: str | None = None) -> None:
+        super().__init__(message)
+        self.raw_output = raw_output
 
 
 class OpenAIResponsesClient:
@@ -32,11 +34,14 @@ class OpenAIResponsesClient:
         schema_name: str,
         schema_model: type[SchemaModelT],
         system_prompt: str,
-        user_prompt: str,
+        user_prompt: str | None = None,
+        user_content: list[dict[str, Any]] | None = None,
         max_output_tokens: int = 900,
     ) -> SchemaModelT:
         if not self.settings.openai_api_key:
             raise AIServiceError("OPENAI_API_KEY is not configured.")
+        if (user_prompt is None) == (user_content is None):
+            raise ValueError("Provide exactly one of user_prompt or user_content.")
 
         url = f"{self.settings.openai_api_base_url.rstrip('/')}/responses"
         payload = {
@@ -49,7 +54,8 @@ class OpenAIResponsesClient:
                 },
                 {
                     "role": "user",
-                    "content": [{"type": "input_text", "text": user_prompt}],
+                    "content": user_content
+                    or [{"type": "input_text", "text": user_prompt}],
                 },
             ],
             "text": {
@@ -64,6 +70,7 @@ class OpenAIResponsesClient:
         }
 
         last_error: Exception | None = None
+        last_raw_output: str | None = None
         attempts = max(self.settings.openai_max_retries, 0) + 1
         for attempt in range(1, attempts + 1):
             try:
@@ -80,9 +87,20 @@ class OpenAIResponsesClient:
                     )
                 response.raise_for_status()
                 response_payload = response.json()
-                return schema_model.model_validate_json(
-                    self._extract_json_text(response_payload)
+                last_raw_output = self._extract_json_text(response_payload)
+                return schema_model.model_validate_json(last_raw_output)
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                last_raw_output = self._truncate_raw_output(exc.response.text)
+                logger.warning(
+                    "OpenAI structured request failed on attempt %s/%s with status %s: %s",
+                    attempt,
+                    attempts,
+                    exc.response.status_code if exc.response is not None else "unknown",
+                    exc,
                 )
+                if attempt < attempts:
+                    await asyncio.sleep(0.25 * attempt)
             except (httpx.HTTPError, ValidationError, json.JSONDecodeError, KeyError) as exc:
                 last_error = exc
                 logger.warning(
@@ -94,7 +112,10 @@ class OpenAIResponsesClient:
                 if attempt < attempts:
                     await asyncio.sleep(0.25 * attempt)
 
-        raise AIServiceError("OpenAI structured request failed.") from last_error
+        raise AIServiceError(
+            "OpenAI structured request failed.",
+            raw_output=last_raw_output,
+        ) from last_error
 
     @staticmethod
     def _extract_json_text(payload: dict) -> str:
@@ -117,3 +138,12 @@ class OpenAIResponsesClient:
                     return text_value
 
         raise KeyError("Structured OpenAI response did not contain parseable text output.")
+
+    @staticmethod
+    def _truncate_raw_output(value: str | None, *, limit: int = 4000) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        return normalized[:limit]

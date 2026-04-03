@@ -45,7 +45,8 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 |-- docs
 |   |-- architecture.md
 |   |-- impact-score.md
-|   `-- moderation.md
+|   |-- moderation.md
+|   `-- trust-and-abuse.md
 |-- packages
 |   `-- README.md
 |-- docker-compose.yml
@@ -95,3 +96,4 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 - The architecture overview lives in [docs/architecture.md](docs/architecture.md).
 - Impact scoring and duplicate detection are documented in [docs/impact-score.md](docs/impact-score.md).
 - Moderation and rewrite flow design is documented in [docs/moderation.md](docs/moderation.md).
+- Trust scoring and anti-abuse controls are documented in [docs/trust-and-abuse.md](docs/trust-and-abuse.md).

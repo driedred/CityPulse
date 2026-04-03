@@ -59,6 +59,17 @@ async def list_own_issues(
     return [service.serialize_issue(issue) for issue in issues]
 
 
+@router.get("/{issue_id}", response_model=IssueRead)
+async def get_own_issue(
+    issue_id: UUID,
+    current_user: CurrentUser,
+    session: SessionDep,
+) -> IssueRead:
+    service = IssueService(session, InlineModerationDispatcher(session))
+    issue = await service.get_issue_for_actor(issue_id, current_user)
+    return service.serialize_issue(issue)
+
+
 @router.get("/{issue_id}/impact", response_model=IssuePublicImpactRead)
 async def get_issue_public_impact(
     issue_id: UUID,

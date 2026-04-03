@@ -14,6 +14,8 @@ export type ModerationState =
   | "under_review"
   | "completed";
 export type ModerationLayer = "deterministic" | "llm";
+export type AbuseRiskLevel = "low" | "medium" | "high";
+export type IntegrityEventSeverity = "low" | "medium" | "high";
 export type ModerationResultStatus =
   | "queued"
   | "approved"
@@ -61,6 +63,60 @@ export type User = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type AdminUserIdentity = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  is_active: boolean;
+  preferred_locale: string;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+};
+
+export type IntegrityFactor = {
+  name: string;
+  label: string;
+  effect: "positive" | "negative" | "risk";
+  signal: number | null;
+  points: number | null;
+  details: Record<string, unknown>;
+};
+
+export type IntegrityEvent = {
+  id: string;
+  event_type: string;
+  severity: IntegrityEventSeverity;
+  entity_type: string | null;
+  entity_id: string | null;
+  summary: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type UserIntegrityCompact = {
+  user: AdminUserIdentity;
+  trust_score: number;
+  trust_weight_multiplier: number;
+  abuse_risk_level: AbuseRiskLevel;
+  abuse_risk_score: number;
+  sanction_count: number;
+  summary: string | null;
+  updated_at: string;
+};
+
+export type UserIntegritySummary = UserIntegrityCompact & {
+  trust_factors: IntegrityFactor[];
+  abuse_factors: IntegrityFactor[];
+  recommended_actions: string[];
+  metrics: Record<string, unknown>;
+};
+
+export type UserIntegrityDetail = UserIntegritySummary & {
+  recent_events: IntegrityEvent[];
 };
 
 export type AuthTokenResponse = {
@@ -121,6 +177,7 @@ export type IssueModerationAdmin = IssueModerationSummary & {
 
 export type IssueModerationAudit = {
   issue_id: string;
+  author: UserIntegrityCompact | null;
   issue_status: IssueStatus;
   moderation_state: ModerationState;
   latest_result: IssueModerationSummary | null;
@@ -129,6 +186,7 @@ export type IssueModerationAudit = {
 
 export type AdminModerationIssue = {
   id: string;
+  author: UserIntegrityCompact | null;
   title: string;
   short_description: string;
   source_locale: string;

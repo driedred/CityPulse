@@ -9,6 +9,7 @@ class ModerationAttachmentDescriptor:
     original_filename: str
     content_type: str
     size_bytes: int
+    moderation_image_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

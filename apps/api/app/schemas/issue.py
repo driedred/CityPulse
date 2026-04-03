@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import (
     IssueStatus,
@@ -13,6 +13,7 @@ from app.models.enums import (
     ModerationState,
     SwipeDirection,
 )
+from app.schemas.user import UserIntegrityCompactRead
 
 DuplicateLookupStatus = Literal[
     "no_match",
@@ -53,6 +54,23 @@ class IssueAttachmentCreate(BaseModel):
     content_type: str = Field(min_length=3, max_length=120)
     size_bytes: int = Field(gt=0)
     storage_key: str = Field(min_length=3, max_length=255)
+    moderation_image_url: str | None = Field(default=None, max_length=3_000_000)
+
+    @field_validator("moderation_image_url")
+    @classmethod
+    def validate_moderation_image_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+        if normalized.startswith("data:image/") and ";base64," in normalized:
+            return normalized
+        if normalized.startswith("https://") or normalized.startswith("http://"):
+            return normalized
+
+        raise ValueError(
+            "moderation_image_url must be an image data URL or HTTP(S) image URL."
+        )
 
 
 class IssueAttachmentRead(BaseModel):
@@ -143,6 +161,7 @@ class IssueModerationAuditRead(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     issue_id: UUID
+    author: UserIntegrityCompactRead | None = None
     issue_status: IssueStatus
     moderation_state: ModerationState
     latest_result: IssueModerationUserRead | None = None
@@ -153,6 +172,7 @@ class AdminModerationIssueRead(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: UUID
+    author: UserIntegrityCompactRead | None = None
     title: str
     short_description: str
     source_locale: str
@@ -321,6 +341,22 @@ class LLMModerationDecision(BaseModel):
     machine_reasons: list[ModerationReasonRead] = Field(default_factory=list)
     normalized_category_slug: str | None = Field(default=None, max_length=80)
     escalation_required: bool = False
+    flags: dict[str, Any] = Field(default_factory=dict)
+
+
+class AIImageModerationStructuredResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    outcome: LLMModerationOutcome
+    confidence: float = Field(ge=0, le=1)
+    summary: str = Field(min_length=1, max_length=500)
+    user_safe_explanation: str = Field(min_length=1, max_length=500)
+    internal_notes: str = Field(min_length=1, max_length=2000)
+    machine_reasons: list[ModerationReasonRead] = Field(default_factory=list)
+    matches_issue: bool = True
+    relevance_score: float = Field(ge=0, le=1)
+    contains_explicit_nudity: bool = False
+    contains_graphic_violence: bool = False
     flags: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import BigInteger, ForeignKey, Index, String, Uuid
+from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -33,6 +33,7 @@ class IssueAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    moderation_image_url: Mapped[str | None] = mapped_column(Text)
 
     issue: Mapped[Issue] = relationship(back_populates="attachments")
     uploader: Mapped[User] = relationship(back_populates="issue_attachments")

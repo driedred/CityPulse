@@ -1,6 +1,8 @@
 import { siteConfig } from "@/lib/site";
 import type {
   AdminModerationIssue,
+  UserIntegrityDetail,
+  UserIntegritySummary,
   ApiErrorPayload,
   AuthTokenResponse,
   DuplicateSuggestionResponse,
@@ -208,6 +210,10 @@ export const apiClient = {
     });
   },
 
+  async getOwnIssue(token: string, issueId: string) {
+    return request<Issue>(`/api/issues/${issueId}`, { token });
+  },
+
   async createAttachmentMetadata(
     token: string,
     issueId: string,
@@ -216,6 +222,7 @@ export const apiClient = {
       content_type: string;
       size_bytes: number;
       storage_key: string;
+      moderation_image_url?: string | null;
     },
   ) {
     return request<IssueAttachment>(`/api/issues/${issueId}/attachments`, {
@@ -243,6 +250,27 @@ export const apiClient = {
   async rerunAdminModerationIssue(token: string, issueId: string) {
     return request<IssueModerationAudit>(
       `/api/admin/moderation/issues/${issueId}/rerun`,
+      {
+        method: "POST",
+        token,
+      },
+    );
+  },
+
+  async listAdminUsers(token: string, limit = 40) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    return request<UserIntegritySummary[]>("/api/admin/users", { token }, params);
+  },
+
+  async getAdminUserIntegrity(token: string, userId: string) {
+    return request<UserIntegrityDetail>(`/api/admin/users/${userId}/integrity`, {
+      token,
+    });
+  },
+
+  async recalculateAdminUserIntegrity(token: string, userId: string) {
+    return request<UserIntegrityDetail>(
+      `/api/admin/users/${userId}/integrity/recalculate`,
       {
         method: "POST",
         token,

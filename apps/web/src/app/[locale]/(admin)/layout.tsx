@@ -1,4 +1,5 @@
 import { PanelShell } from "@/components/layout/panel-shell";
+import { appCopy } from "@/content/copy";
 
 export default async function AdminLayout({
   children,
@@ -12,9 +13,9 @@ export default async function AdminLayout({
   return (
     <PanelShell
       locale={locale}
-      sectionLabel="Admin panel"
-      title="Operations, moderation, and civic response"
-      description="A separate route group for internal workflows, moderation review, and ticket handling."
+      sectionLabel={appCopy.panelShell.adminSectionLabel}
+      title={appCopy.panelShell.adminTitle}
+      description={appCopy.panelShell.adminDescription}
       tone="dark"
     >
       {children}

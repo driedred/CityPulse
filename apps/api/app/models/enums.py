@@ -48,6 +48,18 @@ class ModerationLayer(StrEnum):
     LLM = "llm"
 
 
+class AbuseRiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class IntegrityEventSeverity(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class SupportTicketType(StrEnum):
     APPEAL = "appeal"
     BUG_REPORT = "bug_report"
