@@ -7,7 +7,7 @@ from sqlalchemy import Enum, Float, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.enums import IssueStatus, ModerationState
+from app.models.enums import IssueStatus, ModerationLayer, ModerationState
 
 if TYPE_CHECKING:
     from app.models.issue_attachment import IssueAttachment
@@ -87,3 +87,15 @@ class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="duplicate_issue",
         foreign_keys="IssueDuplicateLink.duplicate_issue_id",
     )
+
+    @property
+    def latest_moderation_result(self) -> ModerationResult | None:
+        if not self.moderation_results:
+            return None
+        return max(
+            self.moderation_results,
+            key=lambda item: (
+                item.created_at,
+                1 if item.layer == ModerationLayer.LLM else 0,
+            ),
+        )

@@ -7,8 +7,14 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import AuthorizationError, ConflictError, NotFoundError
 from app.models import Issue, IssueAttachment, IssueCategory, User
 from app.models.enums import IssueStatus, ModerationState, UserRole
-from app.schemas.issue import IssueAttachmentCreate, IssueCreate
-from app.services.moderation import ModerationDispatcher
+from app.schemas.issue import (
+    IssueAttachmentCreate,
+    IssueAttachmentRead,
+    IssueCategoryRead,
+    IssueCreate,
+    IssueRead,
+)
+from app.services.moderation import ModerationDispatcher, serialize_moderation_result_user
 
 
 class IssueService:
@@ -78,6 +84,7 @@ class IssueService:
         )
         self.session.add(attachment)
         await self.session.commit()
+        await self.moderation_dispatcher.enqueue_issue(issue.id)
         await self.session.refresh(attachment)
         return attachment
 
@@ -88,6 +95,8 @@ class IssueService:
             .options(
                 selectinload(Issue.category),
                 selectinload(Issue.attachments),
+                selectinload(Issue.impact_snapshot),
+                selectinload(Issue.moderation_results),
             )
             .order_by(Issue.created_at.desc())
         )
@@ -100,8 +109,40 @@ class IssueService:
             .options(
                 selectinload(Issue.category),
                 selectinload(Issue.attachments),
+                selectinload(Issue.impact_snapshot),
+                selectinload(Issue.moderation_results),
             )
         )
         if issue is None:
             raise NotFoundError("Issue was not found.")
         return issue
+
+    @staticmethod
+    def serialize_issue(issue: Issue) -> IssueRead:
+        snapshot = issue.impact_snapshot
+        support_count = int(snapshot.signals.get("unique_supporters", 0)) if snapshot else 0
+        return IssueRead(
+            id=issue.id,
+            author_id=issue.author_id,
+            title=issue.title,
+            short_description=issue.short_description,
+            latitude=issue.latitude,
+            longitude=issue.longitude,
+            status=issue.status,
+            moderation_state=issue.moderation_state,
+            source_locale=issue.source_locale,
+            category=IssueCategoryRead.model_validate(issue.category),
+            attachments=[
+                IssueAttachmentRead.model_validate(attachment)
+                for attachment in issue.attachments
+            ],
+            support_count=support_count,
+            location_snippet=f"{issue.latitude:.3f}, {issue.longitude:.3f}",
+            public_impact_score=snapshot.public_impact_score if snapshot else None,
+            affected_people_estimate=(
+                snapshot.affected_people_estimate if snapshot else None
+            ),
+            latest_moderation=serialize_moderation_result_user(issue.latest_moderation_result),
+            created_at=issue.created_at,
+            updated_at=issue.updated_at,
+        )

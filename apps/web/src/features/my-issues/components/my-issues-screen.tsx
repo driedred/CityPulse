@@ -16,6 +16,8 @@ import { useMyIssues } from "@/features/my-issues/hooks/use-my-issues";
 import {
   formatCompactNumber,
   formatIssueDate,
+  formatModerationDecision,
+  formatModerationLayer,
   formatIssueStatus,
   getIssueLocationSnippet,
 } from "@/features/issues/lib/presenters";
@@ -71,6 +73,12 @@ export function MyIssuesScreen({ locale }: MyIssuesScreenProps) {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="subtle">{issue.category.display_name}</Badge>
                 <Badge variant="primary">{formatIssueStatus(issue.status)}</Badge>
+                {issue.latest_moderation ? (
+                  <Badge variant="accent">
+                    {formatModerationLayer(issue.latest_moderation.layer)} ·{" "}
+                    {formatModerationDecision(issue.latest_moderation)}
+                  </Badge>
+                ) : null}
               </div>
 
               <div className="mt-4">
@@ -102,6 +110,17 @@ export function MyIssuesScreen({ locale }: MyIssuesScreenProps) {
                   <span>{formatIssueDate(issue.created_at)}</span>
                 </div>
               </div>
+
+              {issue.latest_moderation?.user_safe_explanation ? (
+                <div className="mt-5 rounded-[1.25rem] border border-border/70 bg-background/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
+                    {appCopy.myIssues.moderationLabel}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {issue.latest_moderation.user_safe_explanation}
+                  </p>
+                </div>
+              ) : null}
             </article>
           ))}
         </div>

@@ -13,6 +13,12 @@ export type ModerationState =
   | "queued"
   | "under_review"
   | "completed";
+export type ModerationLayer = "deterministic" | "llm";
+export type ModerationResultStatus =
+  | "queued"
+  | "approved"
+  | "needs_review"
+  | "rejected";
 
 export type SwipeAction =
   | "support"
@@ -29,6 +35,13 @@ export type DuplicateRecommendedAction =
   | "support_existing"
   | "review_before_submit"
   | "submit_new_issue";
+export type RewriteToneClassification =
+  | "constructive"
+  | "neutral"
+  | "frustrated"
+  | "accusatory"
+  | "rage"
+  | "low_signal";
 
 export type ApiErrorPayload = {
   error: {
@@ -76,6 +89,56 @@ export type IssueAttachment = {
   size_bytes: number;
   created_at: string;
   updated_at: string;
+};
+
+export type ModerationReason = {
+  code: string;
+  label: string;
+  severity: "low" | "medium" | "high";
+  evidence: string | null;
+};
+
+export type IssueModerationSummary = {
+  id: string;
+  layer: ModerationLayer;
+  status: ModerationResultStatus;
+  decision_code: string;
+  provider_name: string | null;
+  model_name: string | null;
+  confidence: number | null;
+  summary: string | null;
+  user_safe_explanation: string | null;
+  escalation_required: boolean;
+  machine_reasons: ModerationReason[];
+  normalized_category_slug: string | null;
+  created_at: string;
+};
+
+export type IssueModerationAdmin = IssueModerationSummary & {
+  internal_notes: string | null;
+  flags: Record<string, unknown>;
+};
+
+export type IssueModerationAudit = {
+  issue_id: string;
+  issue_status: IssueStatus;
+  moderation_state: ModerationState;
+  latest_result: IssueModerationSummary | null;
+  results: IssueModerationAdmin[];
+};
+
+export type AdminModerationIssue = {
+  id: string;
+  title: string;
+  short_description: string;
+  source_locale: string;
+  status: IssueStatus;
+  moderation_state: ModerationState;
+  category: IssueCategory;
+  created_at: string;
+  updated_at: string;
+  attachment_count: number;
+  latest_moderation: IssueModerationSummary | null;
 };
 
 export type PublicIssueSummary = {
@@ -131,6 +194,7 @@ export type Issue = {
   location_snippet: string;
   public_impact_score: number | null;
   affected_people_estimate: number | null;
+  latest_moderation: IssueModerationSummary | null;
   created_at: string;
   updated_at: string;
 };
@@ -193,7 +257,8 @@ export type DuplicateSuggestionResponse = {
 export type RewriteResponse = {
   rewritten_title: string;
   rewritten_description: string;
-  note: string;
+  explanation: string;
+  tone_classification: RewriteToneClassification | null;
 };
 
 export type IssueFeedbackResponse = {

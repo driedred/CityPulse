@@ -24,6 +24,7 @@ from app.schemas.issue import (
     PublicIssueMapMarkerRead,
     PublicIssueSummaryRead,
 )
+from app.services.ai_rewrite import AIRewriteService
 from app.services.duplicate_detection import DuplicateDetectionService
 from app.services.impact_scores import ImpactScoreService
 from app.services.intelligence_utils import distance_km, normalize_text
@@ -45,6 +46,7 @@ class PublicIssueService:
         self.settings = get_settings()
         self.impact_scores = ImpactScoreService(session)
         self.duplicate_detection = DuplicateDetectionService(session)
+        self.ai_rewrite = AIRewriteService()
 
     async def list_categories(self) -> list[IssueCategoryRead]:
         categories = await self.session.scalars(
@@ -106,33 +108,22 @@ class PublicIssueService:
         self,
         payload: IssueRewriteRequest,
     ) -> IssueRewriteResponse:
-        normalized_title = normalize_text(payload.title, max_length=160)
-        normalized_description = normalize_text(
-            payload.short_description,
-            max_length=4000,
-        )
-
-        rewritten_title = normalized_title[:1].upper() + normalized_title[1:]
-        if not rewritten_title.endswith("."):
-            rewritten_title = rewritten_title.rstrip(".") + "."
-
-        rewritten_description = normalized_description
-        if not rewritten_description.endswith("."):
-            rewritten_description = f"{rewritten_description}."
-
-        if "please" not in rewritten_description.lower():
-            rewritten_description = (
-                f"{rewritten_description} Please review this location when possible."
+        category_slug = None
+        if payload.category_id is not None:
+            category = await self.session.scalar(
+                select(IssueCategory).where(IssueCategory.id == payload.category_id)
             )
+            category_slug = category.slug if category else None
 
+        response = await self.ai_rewrite.rewrite(payload, category_slug=category_slug)
         return IssueRewriteResponse(
-            rewritten_title=rewritten_title,
-            rewritten_description=rewritten_description,
-            note=(
-                "This assistive rewrite keeps the issue content intact while reducing heat "
-                "and clarifying the request. Live OpenAI integration is configured to use "
-                f"{self.settings.openai_model}."
+            rewritten_title=normalize_text(response.rewritten_title, max_length=160),
+            rewritten_description=normalize_text(
+                response.rewritten_description,
+                max_length=4000,
             ),
+            explanation=response.explanation,
+            tone_classification=response.tone_classification,
         )
 
     async def record_feedback(

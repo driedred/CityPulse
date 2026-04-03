@@ -43,6 +43,11 @@ class ModerationResultStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class ModerationLayer(StrEnum):
+    DETERMINISTIC = "deterministic"
+    LLM = "llm"
+
+
 class SupportTicketType(StrEnum):
     APPEAL = "appeal"
     BUG_REPORT = "bug_report"

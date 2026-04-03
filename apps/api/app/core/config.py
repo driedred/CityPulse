@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     openai_api_key: str | None = None
+    openai_api_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-5.4-mini"
+    openai_timeout_seconds: float = 20.0
+    openai_max_retries: int = 2
     s3_endpoint_url: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None

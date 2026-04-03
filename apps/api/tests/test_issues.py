@@ -40,9 +40,11 @@ async def test_submit_issue_and_list_own_issues(
 
     assert create_response.status_code == 201
     issue_body = create_response.json()
-    assert issue_body["status"] == "pending_moderation"
-    assert issue_body["moderation_state"] == "queued"
+    assert issue_body["status"] == "approved"
+    assert issue_body["moderation_state"] == "completed"
     assert issue_body["category"]["slug"] == "roads"
+    assert issue_body["latest_moderation"]["layer"] == "llm"
+    assert issue_body["latest_moderation"]["status"] == "approved"
 
     list_response = await client.get("/api/issues/me", headers=headers)
 
@@ -50,3 +52,4 @@ async def test_submit_issue_and_list_own_issues(
     issues = list_response.json()
     assert len(issues) == 1
     assert issues[0]["title"] == "Broken streetlight on Main"
+    assert issues[0]["latest_moderation"]["decision_code"] == "approve"

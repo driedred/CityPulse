@@ -180,10 +180,12 @@ export const appCopy = {
     photoAction: "Add photos",
     photoEmpty: "No photos selected yet.",
     removePhoto: "Remove photo",
-    rewriteAction: "Rewrite constructively",
+    rewriteAction: "Improve text",
     rewriteHeading: "Constructive rewrite suggestion",
     rewriteBody:
       "This optional assistive pass keeps the meaning but makes the report easier to route and review.",
+    rewriteExplanationLabel: "What improved",
+    rewriteToneLabel: "Detected tone",
     acceptRewrite: "Use rewrite",
     rejectRewrite: "Keep original",
     rewriteNoChanges: "The rewrite assist works best once both title and description are filled in.",
@@ -216,6 +218,16 @@ export const appCopy = {
     successTitle: "Issue submitted",
     successBody:
       "Your issue has been sent for moderation. You can now review it in your personal issue list.",
+    moderationApprovedTitle: "Issue accepted for the moderation queue",
+    moderationApprovedBody:
+      "The report passed the current moderation checks and is ready for the next operational step.",
+    moderationReviewTitle: "Issue sent for manual review",
+    moderationReviewBody:
+      "The report is still in the system, but a reviewer may need to confirm tone, clarity, or context.",
+    moderationRejectedTitle: "Issue needs revision",
+    moderationRejectedBody:
+      "The report was stored, but it cannot move forward until the wording becomes more factual and constructive.",
+    moderationFeedbackHeading: "Moderation feedback",
     goToMyIssues: "Open my issues",
     validationTitle: "Please finish the required fields",
     duplicateSupportSaved:
@@ -237,6 +249,31 @@ export const appCopy = {
     createAction: "Create an issue",
     supportLabel: "support",
     draftLabel: "Your submitted reports",
+    moderationLabel: "Moderation",
+  },
+  adminModeration: {
+    eyebrow: "Moderation operations",
+    title: "Inspect automated moderation decisions",
+    description:
+      "Review deterministic flags, LLM summaries, user-facing explanations, and escalation signals before taking the next step.",
+    emptyTitle: "No moderated issues yet",
+    emptyBody:
+      "Submitted issues and their moderation audit trails will appear here once reports begin flowing through the system.",
+    queueTitle: "Recent moderation decisions",
+    queueBody:
+      "Open an issue to inspect deterministic and contextual moderation results without exposing chain-of-thought style reasoning.",
+    detailTitle: "Moderation detail",
+    adminOnly:
+      "An administrator account is required to inspect moderation audit details.",
+    rerunAction: "Rerun moderation",
+    attachmentLabel: "attachments",
+    stageDeterministic: "Deterministic",
+    stageLlm: "Contextual AI",
+    decisionLabel: "Decision",
+    userExplanationLabel: "User explanation",
+    internalNotesLabel: "Internal notes",
+    machineReasonsLabel: "Machine reasons",
+    latestDecisionLabel: "Latest result",
   },
   common: {
     loading: "Loading",
@@ -256,6 +293,9 @@ export const appCopy = {
     overview: "Overview",
     open: "Open",
     none: "None",
+    approved: "Approved",
+    rejected: "Rejected",
+    manualReview: "Manual review",
     reviewRecommended: "Review recommended",
     supportRecommended: "Support recommended",
   },

@@ -1,10 +1,18 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import IssueStatus, ModerationState, SwipeDirection
+from app.models.enums import (
+    IssueStatus,
+    ModerationLayer,
+    ModerationResultStatus,
+    ModerationState,
+    SwipeDirection,
+)
 
 DuplicateLookupStatus = Literal[
     "no_match",
@@ -15,6 +23,16 @@ DuplicateRecommendedAction = Literal[
     "support_existing",
     "review_before_submit",
     "submit_new_issue",
+]
+DeterministicModerationOutcome = Literal["pass", "reject", "needs_manual_review"]
+LLMModerationOutcome = Literal["approve", "reject", "needs_manual_review"]
+RewriteToneClassification = Literal[
+    "constructive",
+    "neutral",
+    "frustrated",
+    "accusatory",
+    "rage",
+    "low_signal",
 ]
 
 
@@ -61,7 +79,7 @@ class IssueCreate(BaseModel):
 
 
 class IssueRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(frozen=True)
 
     id: UUID
     author_id: UUID
@@ -78,6 +96,7 @@ class IssueRead(BaseModel):
     location_snippet: str = ""
     public_impact_score: float | None = None
     affected_people_estimate: int | None = None
+    latest_moderation: IssueModerationUserRead | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -86,6 +105,64 @@ class PublicIssueSort(str):
     TOP = "top"
     RECENT = "recent"
     NEARBY = "nearby"
+
+
+class ModerationReasonRead(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    label: str
+    severity: Literal["low", "medium", "high"]
+    evidence: str | None = None
+
+
+class IssueModerationUserRead(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    layer: ModerationLayer
+    status: ModerationResultStatus
+    decision_code: str
+    provider_name: str | None = None
+    model_name: str | None = None
+    confidence: float | None = None
+    summary: str | None = None
+    user_safe_explanation: str | None = None
+    escalation_required: bool = False
+    machine_reasons: list[ModerationReasonRead] = Field(default_factory=list)
+    normalized_category_slug: str | None = None
+    created_at: datetime
+
+
+class IssueModerationAdminRead(IssueModerationUserRead):
+    internal_notes: str | None = None
+    flags: dict[str, Any] = Field(default_factory=dict)
+
+
+class IssueModerationAuditRead(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    issue_id: UUID
+    issue_status: IssueStatus
+    moderation_state: ModerationState
+    latest_result: IssueModerationUserRead | None = None
+    results: list[IssueModerationAdminRead] = Field(default_factory=list)
+
+
+class AdminModerationIssueRead(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    title: str
+    short_description: str
+    source_locale: str
+    status: IssueStatus
+    moderation_state: ModerationState
+    category: IssueCategoryRead
+    created_at: datetime
+    updated_at: datetime
+    attachment_count: int = 0
+    latest_moderation: IssueModerationUserRead | None = None
 
 
 class IssuePublicImpactRead(BaseModel):
@@ -206,6 +283,9 @@ class IssueDuplicateSuggestionResponse(BaseModel):
 class IssueRewriteRequest(BaseModel):
     title: str = Field(min_length=4, max_length=160)
     short_description: str = Field(min_length=10, max_length=4000)
+    category_id: UUID | None = None
+    source_locale: str = Field(default="en", min_length=2, max_length=12)
+    context_hint: str | None = Field(default=None, max_length=240)
 
 
 class IssueRewriteResponse(BaseModel):
@@ -213,7 +293,44 @@ class IssueRewriteResponse(BaseModel):
 
     rewritten_title: str
     rewritten_description: str
-    note: str
+    explanation: str
+    tone_classification: RewriteToneClassification | None = None
+
+
+class DeterministicModerationDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    outcome: DeterministicModerationOutcome
+    confidence: float = Field(ge=0, le=1)
+    user_safe_explanation: str = Field(min_length=1, max_length=500)
+    internal_notes: str = Field(min_length=1, max_length=2000)
+    summary: str = Field(min_length=1, max_length=500)
+    machine_reasons: list[ModerationReasonRead] = Field(default_factory=list)
+    flags: dict[str, Any] = Field(default_factory=dict)
+    escalation_required: bool = False
+
+
+class LLMModerationDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    outcome: LLMModerationOutcome
+    confidence: float = Field(ge=0, le=1)
+    summary: str = Field(min_length=1, max_length=500)
+    user_safe_explanation: str = Field(min_length=1, max_length=500)
+    internal_notes: str = Field(min_length=1, max_length=2000)
+    machine_reasons: list[ModerationReasonRead] = Field(default_factory=list)
+    normalized_category_slug: str | None = Field(default=None, max_length=80)
+    escalation_required: bool = False
+    flags: dict[str, Any] = Field(default_factory=dict)
+
+
+class AIRewriteStructuredResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    rewritten_title: str = Field(min_length=4, max_length=160)
+    rewritten_description: str = Field(min_length=10, max_length=4000)
+    explanation: str = Field(min_length=1, max_length=500)
+    tone_classification: RewriteToneClassification | None = None
 
 
 class IssueFeedbackCreate(BaseModel):

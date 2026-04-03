@@ -1,4 +1,11 @@
-import type { Issue, IssueStatus, PublicIssueDetail, PublicIssueSummary } from "@/lib/api/types";
+import type {
+  Issue,
+  IssueModerationSummary,
+  IssueStatus,
+  ModerationLayer,
+  PublicIssueDetail,
+  PublicIssueSummary,
+} from "@/lib/api/types";
 
 export const DEFAULT_MAP_CENTER = {
   latitude: 39.8283,
@@ -42,6 +49,26 @@ export function formatIssueStatus(status: IssueStatus) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+export function formatModerationLayer(layer: ModerationLayer) {
+  return layer === "deterministic" ? "Deterministic" : "Contextual AI";
+}
+
+export function formatModerationDecision(
+  moderation: Pick<IssueModerationSummary, "status" | "decision_code"> | null | undefined,
+) {
+  if (!moderation) {
+    return "No decision yet";
+  }
+
+  if (moderation.status === "approved") {
+    return "Approved";
+  }
+  if (moderation.status === "rejected") {
+    return "Rejected";
+  }
+  return "Manual review";
 }
 
 export function getIssueLocationSnippet(

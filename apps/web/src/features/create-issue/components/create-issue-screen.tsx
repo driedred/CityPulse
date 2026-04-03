@@ -35,6 +35,7 @@ import { apiClient } from "@/lib/api/client";
 import type {
   DuplicateLookupStatus,
   DuplicateSuggestion,
+  Issue,
   RewriteResponse,
 } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -79,6 +80,38 @@ function createStorageKey(issueId: string, fileName: string) {
   return `issues/${issueId}/${randomPart}-${sanitizeFileName(fileName)}`;
 }
 
+function getSubmittedIssueFeedback(issue: Issue) {
+  const explanation =
+    issue.latest_moderation?.user_safe_explanation ??
+    issue.latest_moderation?.summary ??
+    appCopy.create.successBody;
+
+  if (issue.status === "rejected") {
+    return {
+      variant: "error" as const,
+      title: appCopy.create.moderationRejectedTitle,
+      body: explanation || appCopy.create.moderationRejectedBody,
+    };
+  }
+
+  if (
+    issue.moderation_state === "under_review" ||
+    issue.latest_moderation?.status === "needs_review"
+  ) {
+    return {
+      variant: "warning" as const,
+      title: appCopy.create.moderationReviewTitle,
+      body: explanation || appCopy.create.moderationReviewBody,
+    };
+  }
+
+  return {
+    variant: "success" as const,
+    title: appCopy.create.moderationApprovedTitle,
+    body: explanation || appCopy.create.moderationApprovedBody,
+  };
+}
+
 export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
   const [step, setStep] = useState(0);
   const [latitude, setLatitude] = useState<number | null>(null);
@@ -92,7 +125,7 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
   const [isRewriting, setIsRewriting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [submittedIssueId, setSubmittedIssueId] = useState<string | null>(null);
+  const [submittedIssue, setSubmittedIssue] = useState<Issue | null>(null);
   const [supportedDuplicateId, setSupportedDuplicateId] = useState<string | null>(null);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const { token, user } = useAuth();
@@ -125,23 +158,25 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
 
   const authToken = token;
 
-  if (submittedIssueId) {
+  if (submittedIssue) {
+    const submissionFeedback = getSubmittedIssueFeedback(submittedIssue);
+
     return (
       <section className="space-y-6">
         <div className="rounded-[2rem] border border-border/70 bg-card/80 p-6 shadow-soft backdrop-blur sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-primary">
-            {appCopy.create.successTitle}
+            {appCopy.create.moderationFeedbackHeading}
           </p>
           <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight">
-            {appCopy.create.title}
+            {submissionFeedback.title}
           </h1>
           <p className="mt-4 text-sm leading-7 text-muted-foreground">
-            {appCopy.create.successBody}
+            {submissionFeedback.body}
           </p>
         </div>
 
-        <InlineMessage variant="success">
-          {appCopy.create.successTitle} {appCopy.create.successBody}
+        <InlineMessage variant={submissionFeedback.variant}>
+          {submissionFeedback.title} {submissionFeedback.body}
         </InlineMessage>
 
         <div className="flex flex-wrap gap-3">
@@ -152,7 +187,7 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
             type="button"
             variant="outline"
             onClick={() => {
-              setSubmittedIssueId(null);
+              setSubmittedIssue(null);
               setNotice(null);
             }}
           >
@@ -230,6 +265,11 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
       const response = await apiClient.rewriteIssueText({
         title: form.getValues("title"),
         short_description: form.getValues("short_description"),
+        category_id: form.getValues("category_id") || null,
+        source_locale: locale,
+        context_hint:
+          categories.data.find((category) => category.id === form.getValues("category_id"))
+            ?.display_name ?? null,
       });
       setRewriteSuggestion(response);
     } catch (error) {
@@ -366,7 +406,7 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
         });
       }
 
-      setSubmittedIssueId(createdIssue.id);
+      setSubmittedIssue(createdIssue);
       resetFlow();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : appCopy.issueViews.errorTitle);
@@ -534,6 +574,22 @@ export function CreateIssueScreen({ locale }: CreateIssueScreenProps) {
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">
                       {rewriteSuggestion.rewritten_description}
                     </p>
+                    <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+                      <p>
+                        <span className="font-semibold text-foreground">
+                          {appCopy.create.rewriteExplanationLabel}:
+                        </span>{" "}
+                        {rewriteSuggestion.explanation}
+                      </p>
+                      {rewriteSuggestion.tone_classification ? (
+                        <p>
+                          <span className="font-semibold text-foreground">
+                            {appCopy.create.rewriteToneLabel}:
+                          </span>{" "}
+                          {rewriteSuggestion.tone_classification}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               ) : (

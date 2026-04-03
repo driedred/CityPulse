@@ -14,16 +14,33 @@ Backend service for CityPulse built with FastAPI, SQLAlchemy, Alembic, and JWT a
 ## AI placeholder config
 
 - `OPENAI_MODEL` defaults to `gpt-5.4-mini` for future rewrite and moderation integrations.
-- Set `OPENAI_API_KEY` when the placeholder rewrite flow is replaced with a live OpenAI API call.
+- Set `OPENAI_API_KEY` to enable live OpenAI-backed contextual moderation and rewrite calls.
+- `OPENAI_API_BASE_URL`, `OPENAI_TIMEOUT_SECONDS`, and `OPENAI_MAX_RETRIES` control network behavior for the OpenAI client.
 
 ## Implemented endpoints
 
+- `GET /api/admin/moderation/issues`
+- `GET /api/admin/moderation/issues/{issue_id}`
+- `POST /api/admin/moderation/issues/{issue_id}/rerun`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/users/me`
 - `POST /api/issues`
 - `POST /api/issues/{issue_id}/attachments`
 - `GET /api/issues/me`
+- `GET /api/issues/{issue_id}/impact`
+- `GET /api/issues/{issue_id}/impact/admin`
+- `POST /api/issues/{issue_id}/impact/recalculate`
+- `GET /api/public/categories`
+- `GET /api/public/issues`
+- `GET /api/public/issues/feed`
+- `GET /api/public/issues/map`
+- `GET /api/public/issues/{issue_id}`
+- `GET /api/public/issues/{issue_id}/impact`
+- `POST /api/public/issues/{issue_id}/feedback`
+- `POST /api/public/issues/{issue_id}/support`
+- `POST /api/public/issues/duplicates`
+- `POST /api/public/issues/rewrite`
 - `POST /api/tickets`
 - `GET /api/tickets/me`
 - `GET /api/health`

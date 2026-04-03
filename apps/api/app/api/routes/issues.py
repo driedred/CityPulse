@@ -16,7 +16,7 @@ from app.schemas.issue import (
 )
 from app.services.impact_scores import ImpactScoreService
 from app.services.issues import IssueService
-from app.services.moderation import LogOnlyModerationDispatcher
+from app.services.moderation import InlineModerationDispatcher
 
 router = APIRouter(prefix="/issues", tags=["issues"])
 AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
@@ -28,9 +28,9 @@ async def submit_issue(
     current_user: CurrentUser,
     session: SessionDep,
 ) -> IssueRead:
-    service = IssueService(session, LogOnlyModerationDispatcher())
+    service = IssueService(session, InlineModerationDispatcher(session))
     issue = await service.create_issue(current_user, payload)
-    return IssueRead.model_validate(issue)
+    return service.serialize_issue(issue)
 
 
 @router.post(
@@ -44,7 +44,7 @@ async def create_issue_attachment_metadata(
     current_user: CurrentUser,
     session: SessionDep,
 ) -> IssueAttachmentRead:
-    service = IssueService(session, LogOnlyModerationDispatcher())
+    service = IssueService(session, InlineModerationDispatcher(session))
     attachment = await service.create_attachment_metadata(issue_id, current_user, payload)
     return IssueAttachmentRead.model_validate(attachment)
 
@@ -54,9 +54,9 @@ async def list_own_issues(
     current_user: CurrentUser,
     session: SessionDep,
 ) -> list[IssueRead]:
-    service = IssueService(session, LogOnlyModerationDispatcher())
+    service = IssueService(session, InlineModerationDispatcher(session))
     issues = await service.list_user_issues(current_user)
-    return [IssueRead.model_validate(issue) for issue in issues]
+    return [service.serialize_issue(issue) for issue in issues]
 
 
 @router.get("/{issue_id}/impact", response_model=IssuePublicImpactRead)

@@ -121,4 +121,13 @@ async def test_public_issue_feed_feedback_duplicate_and_rewrite(
 
     assert rewrite_response.status_code == 200
     rewrite_body = rewrite_response.json()
-    assert "Please review this location when possible." in rewrite_body["rewritten_description"]
+    assert "Please review the location and address the issue." in rewrite_body[
+        "rewritten_description"
+    ]
+    assert rewrite_body["explanation"]
+    assert rewrite_body["tone_classification"] in {
+        "rage",
+        "frustrated",
+        "accusatory",
+        "neutral",
+    }

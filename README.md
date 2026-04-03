@@ -44,7 +44,8 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 |       `-- package.json
 |-- docs
 |   |-- architecture.md
-|   `-- impact-score.md
+|   |-- impact-score.md
+|   `-- moderation.md
 |-- packages
 |   `-- README.md
 |-- docker-compose.yml
@@ -93,3 +94,4 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 - The backend AI integration surface now defaults `OPENAI_MODEL` to `gpt-5.4-mini`.
 - The architecture overview lives in [docs/architecture.md](docs/architecture.md).
 - Impact scoring and duplicate detection are documented in [docs/impact-score.md](docs/impact-score.md).
+- Moderation and rewrite flow design is documented in [docs/moderation.md](docs/moderation.md).

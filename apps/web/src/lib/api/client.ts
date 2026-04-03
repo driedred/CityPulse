@@ -1,5 +1,6 @@
 import { siteConfig } from "@/lib/site";
 import type {
+  AdminModerationIssue,
   ApiErrorPayload,
   AuthTokenResponse,
   DuplicateSuggestionResponse,
@@ -8,6 +9,7 @@ import type {
   IssueCategory,
   IssueFeedbackResponse,
   IssueImpactAdmin,
+  IssueModerationAudit,
   IssuePublicImpact,
   PublicIssueDetail,
   PublicIssueMapMarker,
@@ -227,6 +229,27 @@ export const apiClient = {
     return request<Issue[]>("/api/issues/me", { token });
   },
 
+  async listAdminModerationIssues(token: string, limit = 30) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    return request<AdminModerationIssue[]>("/api/admin/moderation/issues", { token }, params);
+  },
+
+  async getAdminModerationIssue(token: string, issueId: string) {
+    return request<IssueModerationAudit>(`/api/admin/moderation/issues/${issueId}`, {
+      token,
+    });
+  },
+
+  async rerunAdminModerationIssue(token: string, issueId: string) {
+    return request<IssueModerationAudit>(
+      `/api/admin/moderation/issues/${issueId}/rerun`,
+      {
+        method: "POST",
+        token,
+      },
+    );
+  },
+
   async listOwnTickets(token: string) {
     return request<SupportTicket[]>("/api/tickets/me", { token });
   },
@@ -263,6 +286,9 @@ export const apiClient = {
   async rewriteIssueText(input: {
     title: string;
     short_description: string;
+    category_id?: string | null;
+    source_locale?: string;
+    context_hint?: string | null;
   }) {
     return request<RewriteResponse>("/api/public/issues/rewrite", {
       method: "POST",
