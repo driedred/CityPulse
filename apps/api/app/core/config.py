@@ -22,12 +22,18 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://citypulse:citypulse@localhost:5432/citypulse"
     )
     redis_url: str = "redis://localhost:6379/0"
+    jwt_secret_key: str = "change-me-in-production-please-rotate"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
     s3_endpoint_url: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
     s3_region: str = "us-east-1"
     s3_bucket: str = "citypulse-local"
     request_id_header: str = "X-Request-ID"
+    default_admin_email: str = "admin@citypulse.local"
+    default_admin_password: str = "ChangeMe123!"
+    default_admin_full_name: str = "CityPulse Admin"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

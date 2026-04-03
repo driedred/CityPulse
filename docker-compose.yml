@@ -28,6 +28,9 @@ services:
       ALLOWED_ORIGINS: http://localhost:3000
       DATABASE_URL: postgresql+asyncpg://citypulse:citypulse@postgres:5432/citypulse
       REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: change-me-in-production-please-rotate
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
       S3_REGION: us-east-1
       S3_BUCKET: citypulse-local
     depends_on:

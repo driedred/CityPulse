@@ -1,11 +1,12 @@
 from app.models import (  # noqa: F401
-    AdminReply,
-    Attachment,
+    AdminActionLog,
     Issue,
-    IssueVote,
+    IssueAttachment,
+    IssueCategory,
     ModerationResult,
+    SupportTicket,
     SwipeFeedback,
-    Ticket,
+    TicketMessage,
     User,
 )
 from app.models.base import Base

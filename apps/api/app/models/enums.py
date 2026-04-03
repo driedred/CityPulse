@@ -1,42 +1,49 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class UserRole(str, Enum):
+class UserRole(StrEnum):
     CITIZEN = "citizen"
     ADMIN = "admin"
 
 
-class IssueCategory(str, Enum):
-    ROADS = "roads"
-    SANITATION = "sanitation"
-    LIGHTING = "lighting"
-    SAFETY = "safety"
-    OTHER = "other"
-
-
-class IssueStatus(str, Enum):
-    SUBMITTED = "submitted"
-    UNDER_REVIEW = "under_review"
-    PUBLISHED = "published"
-    REJECTED = "rejected"
-    RESOLVED = "resolved"
-
-
-class SwipeDirection(str, Enum):
-    PRIORITIZE = "prioritize"
-    SKIP = "skip"
-    DEPRIORITIZE = "deprioritize"
-
-
-class ModerationStatus(str, Enum):
-    PENDING = "pending"
+class IssueStatus(StrEnum):
+    DRAFT = "draft"
+    PENDING_MODERATION = "pending_moderation"
     APPROVED = "approved"
-    FLAGGED = "flagged"
+    REJECTED = "rejected"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class ModerationState(StrEnum):
+    NOT_REQUESTED = "not_requested"
+    QUEUED = "queued"
+    UNDER_REVIEW = "under_review"
+    COMPLETED = "completed"
+
+
+class SwipeDirection(StrEnum):
+    SUPPORT = "support"
+    SKIP = "skip"
+    DISMISS = "dismiss"
+
+
+class ModerationResultStatus(StrEnum):
+    QUEUED = "queued"
+    APPROVED = "approved"
+    NEEDS_REVIEW = "needs_review"
     REJECTED = "rejected"
 
 
-class TicketStatus(str, Enum):
+class SupportTicketType(StrEnum):
+    APPEAL = "appeal"
+    BUG_REPORT = "bug_report"
+    IMPROVEMENT = "improvement"
+
+
+class SupportTicketStatus(StrEnum):
     OPEN = "open"
-    IN_PROGRESS = "in_progress"
-    BLOCKED = "blocked"
+    UNDER_REVIEW = "under_review"
+    WAITING_FOR_USER = "waiting_for_user"
+    RESOLVED = "resolved"
     CLOSED = "closed"

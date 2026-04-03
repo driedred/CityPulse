@@ -1,67 +1,73 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from geoalchemy2 import Geometry
-from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy import Enum, Float, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.enums import IssueCategory, IssueStatus
+from app.models.enums import IssueStatus, ModerationState
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
-    from app.models.admin_reply import AdminReply
-    from app.models.attachment import Attachment
-    from app.models.issue_vote import IssueVote
+    from app.models.issue_attachment import IssueAttachment
+    from app.models.issue_category import IssueCategory
     from app.models.moderation_result import ModerationResult
+    from app.models.support_ticket import SupportTicket
     from app.models.swipe_feedback import SwipeFeedback
-    from app.models.ticket import Ticket
     from app.models.user import User
 
 
 class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "issues"
     __table_args__ = (
+        Index("ix_issues_author_created_at", "author_id", "created_at"),
         Index("ix_issues_status_created_at", "status", "created_at"),
+        Index("ix_issues_category_created_at", "category_id", "created_at"),
     )
 
-    author_id: Mapped["UUID"] = mapped_column(
-        PGUUID(as_uuid=True),
+    author_id: Mapped[UUID] = mapped_column(
+        Uuid,
         ForeignKey("users.id"),
         index=True,
         nullable=False,
     )
-    title: Mapped[str] = mapped_column(String(160), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[IssueCategory] = mapped_column(
-        Enum(IssueCategory, name="issue_category"),
-        default=IssueCategory.OTHER,
-        nullable=False,
-    )
-    status: Mapped[IssueStatus] = mapped_column(
-        Enum(IssueStatus, name="issue_status"),
-        default=IssueStatus.SUBMITTED,
+    category_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("issue_categories.id"),
         index=True,
         nullable=False,
     )
-    source_locale: Mapped[str] = mapped_column(String(12), default="en", nullable=False)
-    address_text: Mapped[str | None] = mapped_column(String(255))
-    city: Mapped[str | None] = mapped_column(String(120))
-    location: Mapped[str | None] = mapped_column(
-        Geometry(geometry_type="POINT", srid=4326),
-        nullable=True,
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    short_description: Mapped[str] = mapped_column(Text, nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[IssueStatus] = mapped_column(
+        Enum(IssueStatus, name="issue_status", native_enum=False),
+        default=IssueStatus.PENDING_MODERATION,
+        index=True,
+        nullable=False,
     )
-    is_anonymous: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    moderation_state: Mapped[ModerationState] = mapped_column(
+        Enum(ModerationState, name="moderation_state", native_enum=False),
+        default=ModerationState.QUEUED,
+        nullable=False,
+    )
+    source_locale: Mapped[str] = mapped_column(String(12), default="en", nullable=False)
 
-    author: Mapped["User"] = relationship(back_populates="issues")
-    votes: Mapped[list["IssueVote"]] = relationship(back_populates="issue")
-    swipe_feedback: Mapped[list["SwipeFeedback"]] = relationship(back_populates="issue")
-    moderation_results: Mapped[list["ModerationResult"]] = relationship(
+    author: Mapped[User] = relationship(back_populates="issues")
+    category: Mapped[IssueCategory] = relationship(back_populates="issues")
+    swipe_feedback_entries: Mapped[list[SwipeFeedback]] = relationship(
         back_populates="issue"
     )
-    attachments: Mapped[list["Attachment"]] = relationship(back_populates="issue")
-    tickets: Mapped[list["Ticket"]] = relationship(back_populates="issue")
-    admin_replies: Mapped[list["AdminReply"]] = relationship(back_populates="issue")
+    moderation_results: Mapped[list[ModerationResult]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan",
+    )
+    attachments: Mapped[list[IssueAttachment]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan",
+    )
+    support_tickets: Mapped[list[SupportTicket]] = relationship(
+        back_populates="issue"
+    )

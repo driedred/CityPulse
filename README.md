@@ -24,11 +24,15 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 |   |   |   |-- middleware
 |   |   |   |-- models
 |   |   |   |-- schemas
+|   |   |   |-- scripts
 |   |   |   |-- services
 |   |   |   `-- tasks
+|   |   |-- alembic
 |   |   |-- .env.example
+|   |   |-- alembic.ini
 |   |   |-- Dockerfile
-|   |   `-- pyproject.toml
+|   |   |-- pyproject.toml
+|   |   `-- tests
 |   `-- web
 |       |-- src
 |       |   |-- app
@@ -70,7 +74,9 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 2. Create a virtual environment inside `apps/api`.
 3. Copy `apps/api/.env.example` to `apps/api/.env`.
 4. Install the package from `apps/api` with `pip install -e .`.
-5. Run `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` from `apps/api`.
+5. Run `alembic -c alembic.ini upgrade head` from `apps/api`.
+6. Run `python -m app.scripts.seed` from `apps/api`.
+7. Run `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` from `apps/api`.
 
 ## Default Routes
 
@@ -82,5 +88,5 @@ CityPulse is a production-oriented monorepo scaffold for a civic issue reporting
 ## Notes
 
 - Locale-aware routing starts with `/[locale]` and defaults to `en`.
-- The backend includes typed model scaffolding, service contracts, middleware, and async task placeholders without business logic.
+- The backend now includes JWT auth, role-aware models, Alembic migrations, seed data, and API tests.
 - The architecture overview lives in [docs/architecture.md](docs/architecture.md).
