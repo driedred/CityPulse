@@ -38,3 +38,17 @@ app.add_middleware(
 app.add_middleware(RequestContextMiddleware, header_name=settings.request_id_header)
 register_exception_handlers(app)
 app.include_router(api_router)
+from fastapi.middleware.cors import CORSMiddleware
+
+origins = [
+    "http://localhost:3000",
+    "https://citypulse-almaty.vercel.app",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
